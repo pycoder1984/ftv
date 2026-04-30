@@ -22,7 +22,7 @@ class EpisodePresenter : Presenter() {
     override fun onBindViewHolder(viewHolder: ViewHolder, item: Any) {
         val ep = item as Episode
         val card = viewHolder.view as ImageCardView
-        card.titleText = "E${ep.episodeNumber} • ${ep.name}"
+        card.titleText = "E${ep.episodeNumber} • ${ep.name ?: ""}"
         card.contentText = ep.airDate ?: ""
         Glide.with(card.context)
             .load(Tmdb.backdropUrl(ep.stillPath, "w300"))

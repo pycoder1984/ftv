@@ -2,6 +2,8 @@ package com.vidking.firetv.browse
 
 import android.content.Intent
 import android.os.Bundle
+import android.util.Log
+import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.leanback.app.BrowseSupportFragment
 import androidx.leanback.widget.ArrayObjectAdapter
@@ -84,22 +86,11 @@ class MainBrowseFragment : BrowseSupportFragment() {
         rowsAdapter.add(ListRow(HeaderItem(2, getString(R.string.header_popular_movies)), moviesAdapter))
         rowsAdapter.add(ListRow(HeaderItem(3, getString(R.string.header_popular_tv)), tvAdapter))
 
-        lifecycleScope.launch {
-            runCatching {
-                Tmdb.api.trending(Tmdb.API_KEY).results.forEach { trendingAdapter.add(it) }
-            }
-        }
-        lifecycleScope.launch {
-            runCatching {
-                Tmdb.api.popularMovies(Tmdb.API_KEY).results.forEach { moviesAdapter.add(it) }
-            }
-        }
-        lifecycleScope.launch {
-            runCatching {
-                Tmdb.api.popularTv(Tmdb.API_KEY).results.forEach { tvAdapter.add(it) }
-            }
-        }
+        loadInto("trending", trendingAdapter) { Tmdb.api.trending(Tmdb.API_KEY).results }
+        loadInto("popular movies", moviesAdapter) { Tmdb.api.popularMovies(Tmdb.API_KEY).results }
+        loadInto("popular tv", tvAdapter) { Tmdb.api.popularTv(Tmdb.API_KEY).results }
 
+        // Continue Watching reactive stream
         lifecycleScope.launch {
             AppDatabase.get(requireContext()).watchProgressDao().continueWatching()
                 .collectLatest { items ->
@@ -112,6 +103,26 @@ class MainBrowseFragment : BrowseSupportFragment() {
                         rowsAdapter.remove(continueRow)
                     }
                 }
+        }
+    }
+
+    private fun loadInto(
+        label: String,
+        adapter: ArrayObjectAdapter,
+        block: suspend () -> List<MediaItem>
+    ) {
+        lifecycleScope.launch {
+            try {
+                val items = block()
+                items.forEach { adapter.add(it) }
+            } catch (t: Throwable) {
+                Log.e("Vidking", "Failed to load $label", t)
+                Toast.makeText(
+                    requireContext(),
+                    "Failed to load $label: ${t.javaClass.simpleName} ${t.message}",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
         }
     }
 }

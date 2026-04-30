@@ -155,16 +155,16 @@ class DetailsFragment : DetailsSupportFragment() {
     }
 
     private fun bindMovie(d: MovieDetails) {
-        titleText = d.title
+        titleText = d.title ?: "Untitled"
         posterPath = d.posterPath
         backdropPath = d.backdropPath
         val info = PlaceholderInfo(
-            title = d.title,
+            title = titleText,
             body = listOfNotNull(
                 d.releaseDate?.take(4),
-                if (d.runtime != null && d.runtime > 0) "${d.runtime} min" else null,
-                if (d.voteAverage > 0) String.format("★ %.1f", d.voteAverage) else null,
-                d.genres.joinToString(", ") { it.name }.takeIf { it.isNotBlank() }
+                d.runtime?.takeIf { it > 0 }?.let { "$it min" },
+                d.voteAverage?.takeIf { it > 0 }?.let { String.format("★ %.1f", it) },
+                d.genres.mapNotNull { it.name }.joinToString(", ").takeIf { it.isNotBlank() }
             ).joinToString("  •  ") + "\n\n" + (d.overview ?: "")
         )
         detailsRow.item = info
@@ -174,16 +174,16 @@ class DetailsFragment : DetailsSupportFragment() {
     }
 
     private fun bindTv(d: TvDetails) {
-        titleText = d.name
+        titleText = d.name ?: "Untitled"
         posterPath = d.posterPath
         backdropPath = d.backdropPath
         val info = PlaceholderInfo(
-            title = d.name,
+            title = titleText,
             body = listOfNotNull(
                 d.firstAirDate?.take(4),
-                if (d.numberOfSeasons > 0) "${d.numberOfSeasons} seasons" else null,
-                if (d.voteAverage > 0) String.format("★ %.1f", d.voteAverage) else null,
-                d.genres.joinToString(", ") { it.name }.takeIf { it.isNotBlank() }
+                d.numberOfSeasons?.takeIf { it > 0 }?.let { "$it seasons" },
+                d.voteAverage?.takeIf { it > 0 }?.let { String.format("★ %.1f", it) },
+                d.genres.mapNotNull { it.name }.joinToString(", ").takeIf { it.isNotBlank() }
             ).joinToString("  •  ") + "\n\n" + (d.overview ?: "")
         )
         detailsRow.item = info
