@@ -14,7 +14,7 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
-        buildConfigField("String", "TMDB_API_KEY", "\"e547e17d4e91f3e62a571655cd1ccaff\"")
+        buildConfigField("String", "TMDB_API_KEY", "\"a2fb4f4ce28576beb1dfb5de1ca071e4\"")
     }
 
     buildFeatures {
