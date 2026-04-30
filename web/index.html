@@ -203,6 +203,49 @@
   .player .topbar .title-text {
     pointer-events: none; color: white; font-size: 16px; font-weight: 500;
     text-shadow: 0 1px 4px rgba(0,0,0,0.8);
+    flex: 1;
+  }
+  .player .topbar .menu-btn {
+    pointer-events: auto;
+    background: rgba(0,0,0,0.6); color: white;
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 999px; padding: 8px 14px; font-size: 14px;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .player .topbar .menu-btn:hover {
+    background: rgba(229,9,20,0.8); border-color: var(--brand);
+  }
+  .player .topbar .menu-wrap {
+    position: relative; pointer-events: auto;
+  }
+  .player .topbar .menu {
+    position: absolute; top: calc(100% + 8px); right: 0;
+    min-width: 240px; max-width: 360px; max-height: 60vh; overflow-y: auto;
+    background: #15151c; border: 1px solid #2a2a35; border-radius: 8px;
+    box-shadow: 0 12px 32px rgba(0,0,0,0.7);
+    padding: 6px;
+  }
+  .player .topbar .menu .item {
+    display: flex; justify-content: space-between; align-items: center;
+    gap: 10px; padding: 10px 12px; border-radius: 6px;
+    color: white; font-size: 14px; cursor: pointer;
+  }
+  .player .topbar .menu .item:hover { background: rgba(229,9,20,0.2); }
+  .player .topbar .menu .item.active { background: rgba(229,9,20,0.5); }
+  .player .topbar .menu .item .sub {
+    font-size: 12px; color: var(--text-dim);
+  }
+  .player .topbar .menu .item .dl {
+    background: var(--brand); color: white; border: none;
+    padding: 4px 10px; border-radius: 4px; font-size: 12px;
+    text-decoration: none; display: inline-block;
+  }
+  .player .topbar .menu .empty {
+    padding: 20px; color: var(--text-dim); font-size: 13px; text-align: center;
+  }
+  .player .topbar .menu-section-title {
+    padding: 8px 12px 4px; font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.5px; color: var(--text-dim);
   }
 
   .empty {
@@ -235,6 +278,16 @@
   <div class="topbar">
     <button class="back" onclick="closePlayer()">← Back</button>
     <span class="title-text" id="player-title"></span>
+    <div class="menu-wrap">
+      <button class="menu-btn" id="source-btn" onclick="toggleMenu('source')">
+        <span id="source-label">Source</span> ▾
+      </button>
+      <div class="menu hidden" id="source-menu"></div>
+    </div>
+    <div class="menu-wrap">
+      <button class="menu-btn" id="subs-btn" onclick="toggleMenu('subs')">CC ▾</button>
+      <div class="menu hidden" id="subs-menu"></div>
+    </div>
   </div>
   <iframe id="player-frame" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="origin"></iframe>
 </div>
@@ -243,8 +296,52 @@
 const TMDB_KEY = "a2fb4f4ce28576beb1dfb5de1ca071e4";
 const TMDB = "https://api.themoviedb.org/3";
 const IMG = "https://image.tmdb.org/t/p";
-const VIDKING = "https://www.vidking.net";
 const STORAGE_KEY = "vidking_progress_v1";
+const SOURCE_PREF = "vidking_source_v1";
+
+// Iframe embed providers. Each provides movie() and tv() URL builders.
+// `progress` (resume seconds) is supported by Vidking only — others ignore the param.
+const SOURCES = [
+  {
+    id: "vidking", name: "Vidking",
+    movie: (id, p) => `https://www.vidking.net/embed/movie/${id}?color=e50914&autoPlay=true${p.resume ? `&progress=${Math.floor(p.resume)}` : ""}`,
+    tv: (id, s, e, p) => `https://www.vidking.net/embed/tv/${id}/${s}/${e}?color=e50914&autoPlay=true&nextEpisode=true&episodeSelector=true${p.resume ? `&progress=${Math.floor(p.resume)}` : ""}`,
+  },
+  {
+    id: "vidsrc-cc", name: "VidSrc.cc",
+    movie: (id) => `https://vidsrc.cc/v2/embed/movie/${id}?autoPlay=true`,
+    tv: (id, s, e) => `https://vidsrc.cc/v2/embed/tv/${id}/${s}/${e}?autoPlay=true`,
+  },
+  {
+    id: "vidsrc-xyz", name: "VidSrc.xyz",
+    movie: (id) => `https://vidsrc.xyz/embed/movie?tmdb=${id}`,
+    tv: (id, s, e) => `https://vidsrc.xyz/embed/tv?tmdb=${id}&season=${s}&episode=${e}`,
+  },
+  {
+    id: "embedsu", name: "Embed.su",
+    movie: (id) => `https://embed.su/embed/movie/${id}`,
+    tv: (id, s, e) => `https://embed.su/embed/tv/${id}/${s}/${e}`,
+  },
+  {
+    id: "2embed", name: "2Embed",
+    movie: (id) => `https://www.2embed.cc/embed/${id}`,
+    tv: (id, s, e) => `https://www.2embed.cc/embedtv/${id}&s=${s}&e=${e}`,
+  },
+  {
+    id: "autoembed", name: "AutoEmbed",
+    movie: (id) => `https://player.autoembed.cc/embed/movie/${id}`,
+    tv: (id, s, e) => `https://player.autoembed.cc/embed/tv/${id}/${s}/${e}`,
+  },
+];
+
+function currentSourceIdx() {
+  const saved = localStorage.getItem(SOURCE_PREF);
+  const idx = SOURCES.findIndex(s => s.id === saved);
+  return idx >= 0 ? idx : 0;
+}
+function setCurrentSource(id) {
+  localStorage.setItem(SOURCE_PREF, id);
+}
 
 // ----- Watch progress storage (localStorage) -----
 function loadProgress() {
@@ -516,19 +613,11 @@ const playerTitle = document.getElementById("player-title");
 let currentPlayback = null;
 let lastSavedAt = 0;
 
-function buildEmbedUrl(p) {
-  const base = p.mediaType === "movie"
-    ? `${VIDKING}/embed/movie/${p.id}`
-    : `${VIDKING}/embed/tv/${p.id}/${p.season}/${p.episode}`;
-  const params = new URLSearchParams();
-  params.set("color", "e50914");
-  params.set("autoPlay", "true");
-  if (p.mediaType === "tv") {
-    params.set("nextEpisode", "true");
-    params.set("episodeSelector", "true");
-  }
-  if (p.resume && p.resume > 0) params.set("progress", String(Math.floor(p.resume)));
-  return `${base}?${params.toString()}`;
+function buildEmbedUrl(p, sourceIdx = currentSourceIdx()) {
+  const src = SOURCES[sourceIdx];
+  return p.mediaType === "movie"
+    ? src.movie(p.id, p)
+    : src.tv(p.id, p.season, p.episode, p);
 }
 
 function playMedia(p) {
@@ -538,9 +627,116 @@ function playMedia(p) {
     ? `${p.title}  •  S${p.season}E${p.episode}`
     : p.title;
   playerFrame.src = buildEmbedUrl(p);
+  document.getElementById("source-label").textContent =
+    SOURCES[currentSourceIdx()].name;
+  renderSourceMenu();
+  // Reset subtitles menu — load on demand
+  const subsMenu = document.getElementById("subs-menu");
+  subsMenu.innerHTML = "";
+  subsMenu.dataset.loaded = "";
+  closeMenus();
   playerEl.classList.remove("hidden");
   document.body.style.overflow = "hidden";
 }
+
+function changeSource(id) {
+  if (!currentPlayback) return;
+  setCurrentSource(id);
+  document.getElementById("source-label").textContent =
+    SOURCES[currentSourceIdx()].name;
+  // Reload iframe with same media but new source — preserve resume from progress map
+  const key = progressKey(
+    currentPlayback.id, currentPlayback.mediaType,
+    currentPlayback.season, currentPlayback.episode
+  );
+  const rec = getProgress(key);
+  if (rec && !rec.finished) currentPlayback.resume = rec.currentTime;
+  playerFrame.src = buildEmbedUrl(currentPlayback);
+  renderSourceMenu();
+  closeMenus();
+}
+
+function renderSourceMenu() {
+  const menu = document.getElementById("source-menu");
+  const cur = currentSourceIdx();
+  menu.innerHTML = `<div class="menu-section-title">Switch source</div>` +
+    SOURCES.map((s, i) =>
+      `<div class="item ${i === cur ? "active" : ""}" onclick="changeSource('${s.id}')">
+         <span>${s.name}</span>
+         ${i === cur ? '<span class="sub">playing</span>' : ''}
+       </div>`).join("");
+}
+
+function toggleMenu(which) {
+  const map = { source: "source-menu", subs: "subs-menu" };
+  for (const k of Object.keys(map)) {
+    const el = document.getElementById(map[k]);
+    if (k === which) el.classList.toggle("hidden");
+    else el.classList.add("hidden");
+  }
+  if (which === "subs" && !document.getElementById("subs-menu").classList.contains("hidden")) {
+    loadSubsIfNeeded();
+  }
+}
+function closeMenus() {
+  document.getElementById("source-menu")?.classList.add("hidden");
+  document.getElementById("subs-menu")?.classList.add("hidden");
+}
+
+async function loadSubsIfNeeded() {
+  const menu = document.getElementById("subs-menu");
+  if (menu.dataset.loaded === "1") return;
+  menu.innerHTML = `<div class="menu-section-title">Subtitles</div>
+                    <div class="empty">Loading…</div>`;
+  try {
+    const p = currentPlayback;
+    const url = new URL("https://sub.wyzie.ru/search");
+    url.searchParams.set("id", String(p.id));
+    if (p.mediaType === "tv") {
+      url.searchParams.set("season", String(p.season));
+      url.searchParams.set("episode", String(p.episode));
+    }
+    url.searchParams.set("format", "srt");
+    const r = await fetch(url);
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const list = await r.json();
+    if (!Array.isArray(list) || !list.length) {
+      menu.innerHTML = `<div class="menu-section-title">Subtitles</div>
+                        <div class="empty">No external subtitles found.</div>`;
+    } else {
+      // Group by language code, dedupe
+      const seen = new Set();
+      const items = list.filter(s => {
+        const key = (s.language || "") + "|" + (s.display || "");
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      }).slice(0, 30);
+      menu.innerHTML = `<div class="menu-section-title">Download (.srt) — load into your player</div>` +
+        items.map(s => {
+          const label = escapeHtml(s.display || s.language || "Unknown");
+          const tag = s.isHearingImpaired ? " · CC" : "";
+          return `<div class="item">
+                    <span>${label}<span class="sub">${escapeHtml(s.language || "")}${tag}</span></span>
+                    <a class="dl" href="${escapeHtml(s.url)}" target="_blank" rel="noopener" download>Download</a>
+                  </div>`;
+        }).join("") +
+        `<div class="empty" style="padding:10px;font-size:11px;line-height:1.4">
+           These come from Wyzie / OpenSubtitles. The iframe player has its own built-in subtitles too — try those first.
+         </div>`;
+    }
+    menu.dataset.loaded = "1";
+  } catch (e) {
+    menu.innerHTML = `<div class="menu-section-title">Subtitles</div>
+                      <div class="empty">Failed to load: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+// Click outside menus to close
+document.addEventListener("click", (e) => {
+  if (!playerEl.contains(e.target)) return;
+  if (!e.target.closest(".menu-wrap")) closeMenus();
+});
 
 function playFromRecord(rec) {
   playMedia({
@@ -551,6 +747,7 @@ function playFromRecord(rec) {
 }
 
 function closePlayer() {
+  closeMenus();
   playerEl.classList.add("hidden");
   playerFrame.src = "about:blank";
   document.body.style.overflow = "";
