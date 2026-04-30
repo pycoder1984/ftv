@@ -298,6 +298,8 @@ const TMDB = "https://api.themoviedb.org/3";
 const IMG = "https://image.tmdb.org/t/p";
 const STORAGE_KEY = "vidking_progress_v1";
 const SOURCE_PREF = "vidking_source_v1";
+const WYZIE_KEY_PREF = "vidking_wyzie_key_v1";
+const WYZIE_BASE = "https://sub.wyzie.io";
 
 // Iframe embed providers. Each provides movie() and tv() URL builders.
 // `progress` (resume seconds) is supported by Vidking only — others ignore the param.
@@ -683,33 +685,71 @@ function closeMenus() {
   document.getElementById("subs-menu")?.classList.add("hidden");
 }
 
-async function loadSubsIfNeeded() {
+function getWyzieKey() { return localStorage.getItem(WYZIE_KEY_PREF) || ""; }
+function setWyzieKey(k) {
+  if (k) localStorage.setItem(WYZIE_KEY_PREF, k.trim());
+  else localStorage.removeItem(WYZIE_KEY_PREF);
+}
+
+function renderWyzieKeyPrompt(reason) {
   const menu = document.getElementById("subs-menu");
-  if (menu.dataset.loaded === "1") return;
+  menu.innerHTML = `
+    <div class="menu-section-title">Subtitles need a free Wyzie key</div>
+    <div class="empty" style="padding:10px;font-size:12px;line-height:1.45;text-align:left">
+      ${reason ? `<div style="color:#ff8a8a;margin-bottom:8px">${escapeHtml(reason)}</div>` : ""}
+      1. Open <a href="https://sub.wyzie.io/redeem" target="_blank" rel="noopener" style="color:#fff;text-decoration:underline">sub.wyzie.io/redeem</a> in a new tab and claim a free key.<br/>
+      2. Paste it below — saved locally, never sent anywhere except sub.wyzie.io.
+    </div>
+    <div style="display:flex;gap:6px;padding:6px 10px 10px">
+      <input id="wyzie-key-input" type="text" placeholder="Paste API key…"
+        value="${escapeHtml(getWyzieKey())}"
+        style="flex:1;background:#0b0b0f;color:white;border:1px solid #2a2a35;border-radius:4px;padding:8px 10px;font-size:13px;outline:none" />
+      <button onclick="saveWyzieKeyAndRetry()"
+        style="background:var(--brand);color:white;border:none;padding:8px 14px;border-radius:4px;font-size:13px;cursor:pointer">Save</button>
+    </div>`;
+  menu.dataset.loaded = "";
+}
+
+function saveWyzieKeyAndRetry() {
+  const v = document.getElementById("wyzie-key-input")?.value?.trim() || "";
+  if (!v) return;
+  setWyzieKey(v);
+  loadSubsIfNeeded(true);
+}
+
+async function loadSubsIfNeeded(force = false) {
+  const menu = document.getElementById("subs-menu");
+  if (!force && menu.dataset.loaded === "1") return;
+  const key = getWyzieKey();
+  if (!key) { renderWyzieKeyPrompt(); return; }
   menu.innerHTML = `<div class="menu-section-title">Subtitles</div>
                     <div class="empty">Loading…</div>`;
   try {
     const p = currentPlayback;
-    const url = new URL("https://sub.wyzie.ru/search");
+    const url = new URL(WYZIE_BASE + "/search");
     url.searchParams.set("id", String(p.id));
     if (p.mediaType === "tv") {
       url.searchParams.set("season", String(p.season));
       url.searchParams.set("episode", String(p.episode));
     }
     url.searchParams.set("format", "srt");
+    url.searchParams.set("key", key);
     const r = await fetch(url);
+    if (r.status === 401 || r.status === 403) {
+      renderWyzieKeyPrompt("That key was rejected (HTTP " + r.status + "). Get a fresh one and try again.");
+      return;
+    }
     if (!r.ok) throw new Error("HTTP " + r.status);
     const list = await r.json();
     if (!Array.isArray(list) || !list.length) {
       menu.innerHTML = `<div class="menu-section-title">Subtitles</div>
-                        <div class="empty">No external subtitles found.</div>`;
+                        <div class="empty">No external subtitles found for this title.</div>`;
     } else {
-      // Group by language code, dedupe
       const seen = new Set();
       const items = list.filter(s => {
-        const key = (s.language || "") + "|" + (s.display || "");
-        if (seen.has(key)) return false;
-        seen.add(key);
+        const k = (s.language || "") + "|" + (s.display || "");
+        if (seen.has(k)) return false;
+        seen.add(k);
         return true;
       }).slice(0, 30);
       menu.innerHTML = `<div class="menu-section-title">Download (.srt) — load into your player</div>` +
@@ -722,7 +762,7 @@ async function loadSubsIfNeeded() {
                   </div>`;
         }).join("") +
         `<div class="empty" style="padding:10px;font-size:11px;line-height:1.4">
-           These come from Wyzie / OpenSubtitles. The iframe player has its own built-in subtitles too — try those first.
+           These come from Wyzie/OpenSubtitles. The iframe player has its own built-in subtitles too — try those first.
          </div>`;
     }
     menu.dataset.loaded = "1";
