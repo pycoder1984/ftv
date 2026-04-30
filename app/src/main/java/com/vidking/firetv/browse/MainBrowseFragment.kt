@@ -84,23 +84,23 @@ class MainBrowseFragment : BrowseSupportFragment() {
         rowsAdapter.add(ListRow(HeaderItem(2, getString(R.string.header_popular_movies)), moviesAdapter))
         rowsAdapter.add(ListRow(HeaderItem(3, getString(R.string.header_popular_tv)), tvAdapter))
 
-        viewLifecycleOwner.lifecycleScope.launch {
+        lifecycleScope.launch {
             runCatching {
                 Tmdb.api.trending(Tmdb.API_KEY).results.forEach { trendingAdapter.add(it) }
             }
         }
-        viewLifecycleOwner.lifecycleScope.launch {
+        lifecycleScope.launch {
             runCatching {
                 Tmdb.api.popularMovies(Tmdb.API_KEY).results.forEach { moviesAdapter.add(it) }
             }
         }
-        viewLifecycleOwner.lifecycleScope.launch {
+        lifecycleScope.launch {
             runCatching {
                 Tmdb.api.popularTv(Tmdb.API_KEY).results.forEach { tvAdapter.add(it) }
             }
         }
 
-        viewLifecycleOwner.lifecycleScope.launch {
+        lifecycleScope.launch {
             AppDatabase.get(requireContext()).watchProgressDao().continueWatching()
                 .collectLatest { items ->
                     continueAdapter.clear()

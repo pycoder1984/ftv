@@ -55,7 +55,7 @@ class SearchFragment : SearchSupportFragment(), SearchSupportFragment.SearchResu
         rowsAdapter.clear()
         val q = query?.trim().orEmpty()
         if (q.length < 2) return
-        pendingJob = viewLifecycleOwner.lifecycleScope.launch {
+        pendingJob = lifecycleScope.launch {
             if (!immediate) delay(300)
             runCatching {
                 val results = Tmdb.api.searchMulti(Tmdb.API_KEY, q).results

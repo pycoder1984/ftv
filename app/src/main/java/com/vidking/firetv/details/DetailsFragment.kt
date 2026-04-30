@@ -107,7 +107,7 @@ class DetailsFragment : DetailsSupportFragment() {
     }
 
     private fun refreshResumeAction() {
-        viewLifecycleOwner.lifecycleScope.launch {
+        lifecycleScope.launch {
             val dao = AppDatabase.get(requireContext()).watchProgressDao()
             val record: WatchProgress? = withContext(Dispatchers.IO) {
                 if (mediaType == "movie") dao.get(WatchProgress.keyFor(tmdbId, "movie"))
@@ -139,7 +139,7 @@ class DetailsFragment : DetailsSupportFragment() {
     }
 
     private fun loadDetails() {
-        viewLifecycleOwner.lifecycleScope.launch {
+        lifecycleScope.launch {
             runCatching {
                 if (mediaType == "movie") {
                     val d = Tmdb.api.movieDetails(tmdbId, Tmdb.API_KEY)
@@ -206,7 +206,7 @@ class DetailsFragment : DetailsSupportFragment() {
     private fun loadFirstSeason(d: TvDetails) {
         val seasons = d.seasons.filter { it.seasonNumber > 0 }
         if (seasons.isEmpty()) return
-        viewLifecycleOwner.lifecycleScope.launch {
+        lifecycleScope.launch {
             seasons.take(3).forEach { season ->
                 runCatching {
                     val sd = Tmdb.api.tvSeason(d.id, season.seasonNumber, Tmdb.API_KEY)
