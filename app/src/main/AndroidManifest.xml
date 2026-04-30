@@ -12,6 +12,7 @@
         android:required="false" />
 
     <application
+        android:name=".App"
         android:allowBackup="true"
         android:banner="@drawable/app_banner"
         android:icon="@mipmap/ic_launcher"
@@ -37,8 +38,7 @@
         <activity
             android:name=".details.DetailsActivity"
             android:exported="false"
-            android:screenOrientation="landscape"
-            android:theme="@style/Theme.FireTVVidking.Details" />
+            android:screenOrientation="landscape" />
 
         <activity
             android:name=".search.SearchActivity"

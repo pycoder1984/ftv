@@ -12,7 +12,6 @@ import androidx.leanback.widget.ArrayObjectAdapter
 import androidx.leanback.widget.ClassPresenterSelector
 import androidx.leanback.widget.DetailsOverviewRow
 import androidx.leanback.widget.FullWidthDetailsOverviewRowPresenter
-import androidx.leanback.widget.FullWidthDetailsOverviewSharedElementHelper
 import androidx.leanback.widget.HeaderItem
 import androidx.leanback.widget.ListRow
 import androidx.leanback.widget.ListRowPresenter
@@ -65,9 +64,6 @@ class DetailsFragment : DetailsSupportFragment() {
                 ACTION_RESUME -> launchPlayer(resumeSeconds = resumeSeconds, season = resumeSeason, episode = resumeEpisode)
             }
         }
-        val helper = FullWidthDetailsOverviewSharedElementHelper()
-        detailsPresenter.setListener(helper)
-
         presenterSelector.addClassPresenter(DetailsOverviewRow::class.java, detailsPresenter)
         presenterSelector.addClassPresenter(ListRow::class.java, ListRowPresenter())
         rowsAdapter = ArrayObjectAdapter(presenterSelector)
