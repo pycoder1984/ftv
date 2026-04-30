@@ -85,6 +85,16 @@ adb connect FIRE_TV_IP:5555
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
+## Run on your laptop (no install)
+
+There's also a single-file web version at `web/index.html` that mirrors the same UI. Just open it in any modern browser:
+
+- Windows: double-click `web/index.html`, or run `start web/index.html`
+- macOS: `open web/index.html`
+- Linux: `xdg-open web/index.html`
+
+Watch progress is saved in the browser's `localStorage`. No build step, no server.
+
 ## Legal
 
 This app is a thin frontend over public TMDB metadata and the Vidking embed player. You are responsible for what you stream. The author does not host content.
