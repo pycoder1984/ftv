@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.FireTVVidking" parent="Theme.Leanback.Browse">
+        <item name="android:colorPrimary">@color/brand_red</item>
+        <item name="defaultBrandColor">@color/brand_red</item>
+        <item name="defaultSearchColor">@color/brand_red</item>
+        <item name="defaultSearchIconColor">@color/text_primary</item>
+        <item name="android:windowBackground">@color/background_dark</item>
+    </style>
+
+    <style name="Theme.FireTVVidking.Details" parent="Theme.Leanback.Details">
+        <item name="android:colorPrimary">@color/brand_red</item>
+        <item name="android:windowBackground">@color/background_dark</item>
+    </style>
+
+    <style name="Theme.FireTVVidking.Fullscreen" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:windowBackground">@android:color/black</item>
+        <item name="android:windowFullscreen">true</item>
+    </style>
+</resources>
