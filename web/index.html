@@ -299,6 +299,7 @@ const IMG = "https://image.tmdb.org/t/p";
 const STORAGE_KEY = "vidking_progress_v1";
 const SOURCE_PREF = "vidking_source_v1";
 const WYZIE_KEY_PREF = "vidking_wyzie_key_v1";
+const WYZIE_DEFAULT_KEY = "wyzie-a43d54e1262d574cf0a2dc64d2cff52c";
 const WYZIE_BASE = "https://sub.wyzie.io";
 
 // Iframe embed providers. Each provides movie() and tv() URL builders.
@@ -685,7 +686,7 @@ function closeMenus() {
   document.getElementById("subs-menu")?.classList.add("hidden");
 }
 
-function getWyzieKey() { return localStorage.getItem(WYZIE_KEY_PREF) || ""; }
+function getWyzieKey() { return localStorage.getItem(WYZIE_KEY_PREF) || WYZIE_DEFAULT_KEY; }
 function setWyzieKey(k) {
   if (k) localStorage.setItem(WYZIE_KEY_PREF, k.trim());
   else localStorage.removeItem(WYZIE_KEY_PREF);
@@ -739,11 +740,24 @@ async function loadSubsIfNeeded(force = false) {
       renderWyzieKeyPrompt("That key was rejected (HTTP " + r.status + "). Get a fresh one and try again.");
       return;
     }
+    // Wyzie returns 400 with code "No subtitles found" — treat as empty, not error
+    if (r.status === 400) {
+      const body = await r.json().catch(() => null);
+      if (body && body.message && /no subtitles found/i.test(body.message)) {
+        menu.innerHTML = `<div class="menu-section-title">Subtitles</div>
+                          <div class="empty">No external subtitles found for this title.<br/>
+                          <span style="font-size:11px;color:var(--text-dim)">If every title returns nothing, Wyzie's upstream scraper may be temporarily down — try the player's built-in CC instead.</span></div>`;
+        menu.dataset.loaded = "1";
+        return;
+      }
+      throw new Error("HTTP 400: " + (body?.message || "Bad request"));
+    }
     if (!r.ok) throw new Error("HTTP " + r.status);
     const list = await r.json();
     if (!Array.isArray(list) || !list.length) {
       menu.innerHTML = `<div class="menu-section-title">Subtitles</div>
-                        <div class="empty">No external subtitles found for this title.</div>`;
+                        <div class="empty">No external subtitles found for this title.<br/>
+                        <span style="font-size:11px;color:var(--text-dim)">If every title returns nothing, Wyzie's upstream scraper may be temporarily down — try the player's built-in CC instead.</span></div>`;
     } else {
       const seen = new Set();
       const items = list.filter(s => {
