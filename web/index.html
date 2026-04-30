@@ -4,6 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Vidking</title>
+<link rel="icon" type="image/png" href="icon.png" />
 <style>
   :root {
     --brand: #e50914;
@@ -110,20 +111,31 @@
     min-height: 100vh;
   }
   .backdrop {
-    position: absolute; inset: 0;
+    position: absolute; top: 0; left: 0; right: 0;
     background-size: cover; background-position: center;
     filter: brightness(0.4);
+    z-index: 0;
   }
   .backdrop::after {
     content: ""; position: absolute; inset: 0;
     background: linear-gradient(180deg,
       rgba(11,11,15,0.4) 0%,
-      rgba(11,11,15,0.7) 50%,
+      rgba(11,11,15,0.7) 60%,
       var(--bg) 100%);
   }
   .details-content {
     position: relative; padding: 80px 48px 40px;
     max-width: 980px;
+  }
+  /* Anything appended inside .details (after the hero) needs to clear the absolute backdrop */
+  .details > .season-tabs,
+  .details > .row {
+    position: relative;
+    z-index: 2;
+  }
+  .backdrop {
+    /* Cap backdrop to the hero so it doesn't cover episode rows below */
+    height: 70vh;
   }
   .details h1 {
     font-size: 44px; font-weight: 700; margin: 0 0 12px;
@@ -211,7 +223,7 @@
 <body>
 
 <header id="header">
-  <div class="logo" onclick="showHome()">VIDKING</div>
+  <div class="logo" onclick="goHome()">VIDKING</div>
   <div class="search-wrap">
     <input id="search" type="search" placeholder="Search movies and TV…" autocomplete="off" />
   </div>
@@ -347,7 +359,6 @@ function rowSkeleton(title) {
 }
 
 async function showHome() {
-  document.getElementById("search").value = "";
   clearMain();
 
   const cont = continueWatching();
@@ -637,6 +648,11 @@ function formatTime(seconds) {
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && !playerEl.classList.contains("hidden")) closePlayer();
 });
+
+function goHome() {
+  document.getElementById("search").value = "";
+  showHome();
+}
 
 // Initial load
 showHome();

@@ -5,11 +5,13 @@
             <solid android:color="@color/background_dark" />
         </shape>
     </item>
-    <item android:gravity="center">
-        <shape android:shape="rectangle">
-            <size android:width="180dp" android:height="40dp" />
-            <solid android:color="@color/brand_red" />
-            <corners android:radius="6dp" />
-        </shape>
+    <item
+        android:gravity="center"
+        android:width="120dp"
+        android:height="120dp">
+        <bitmap
+            android:src="@drawable/ic_logo"
+            android:gravity="center"
+            android:antialias="true" />
     </item>
 </layer-list>
