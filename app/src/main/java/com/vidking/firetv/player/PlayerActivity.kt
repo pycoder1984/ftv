@@ -6,6 +6,7 @@ import android.os.Bundle
 import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
+import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.webkit.WebView
@@ -46,6 +47,10 @@ class PlayerActivity : AppCompatActivity() {
         episode = intent.getIntExtra(EXTRA_EPISODE, 0)
         resumeSeconds = intent.getLongExtra(EXTRA_RESUME, 0L)
 
+        // Enable WebView remote debugging — connect via chrome://inspect from a laptop
+        // (requires `adb connect FIRE_TV_IP:5555` first)
+        WebView.setWebContentsDebuggingEnabled(true)
+
         webView = WebView(this)
         webView.layoutParams = android.view.ViewGroup.LayoutParams(
             android.view.ViewGroup.LayoutParams.MATCH_PARENT,
@@ -56,6 +61,7 @@ class PlayerActivity : AppCompatActivity() {
         webView.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
+            databaseEnabled = true
             mediaPlaybackRequiresUserGesture = false
             mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
             loadWithOverviewMode = true
@@ -63,7 +69,16 @@ class PlayerActivity : AppCompatActivity() {
             cacheMode = WebSettings.LOAD_DEFAULT
             allowContentAccess = true
             allowFileAccess = true
+            // Many embed sites detect Android WebView and refuse — pretend we're desktop Chrome
+            userAgentString = DESKTOP_USER_AGENT
         }
+
+        // Embed sites set auth/session cookies on third-party iframes (their CDN domains).
+        // Without this, the m3u8/server lookup fails and you see "server unavailable".
+        val cookies = CookieManager.getInstance()
+        cookies.setAcceptCookie(true)
+        cookies.setAcceptThirdPartyCookies(webView, true)
+
         webView.setBackgroundColor(android.graphics.Color.BLACK)
         webView.webViewClient = WebViewClient()
         webView.webChromeClient = WebChromeClient()
@@ -218,6 +233,10 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     companion object {
+        private const val DESKTOP_USER_AGENT =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+                "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+
         private const val EXTRA_TMDB_ID = "tmdb_id"
         private const val EXTRA_MEDIA_TYPE = "media_type"
         private const val EXTRA_TITLE = "title"
