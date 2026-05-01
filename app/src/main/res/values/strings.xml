@@ -12,4 +12,9 @@
     <string name="loading">Loading…</string>
     <string name="search_hint">Search movies and TV</string>
     <string name="season_episode_format">S%1$dE%2$d</string>
+    <string name="loader_searching">Searching for stream…</string>
+    <string name="loader_trying">Trying %1$s  (%2$d / %3$d)</string>
+    <string name="loader_timeout">%1$s didn\'t respond — trying next…</string>
+    <string name="loader_starting">Stream found from %1$s — starting player…</string>
+    <string name="loader_hint">D-pad LEFT / RIGHT to switch source manually  •  BACK to cancel</string>
 </resources>
