@@ -1,34 +1,19 @@
 package com.vidking.firetv.player
 
-import android.content.ActivityNotFoundException
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
-import android.graphics.Color
-import android.net.Uri
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
-import android.util.Log
-import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
-import android.webkit.WebResourceRequest
-import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import android.widget.FrameLayout
-import android.widget.TextView
-import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
-import com.vidking.firetv.R
 import com.vidking.firetv.db.AppDatabase
 import com.vidking.firetv.db.WatchProgress
 import kotlinx.coroutines.launch
@@ -36,7 +21,6 @@ import kotlinx.coroutines.launch
 class PlayerActivity : AppCompatActivity() {
 
     private lateinit var webView: WebView
-    private lateinit var hintView: TextView
 
     private var tmdbId: Int = -1
     private var mediaType: String = "movie"
@@ -46,14 +30,8 @@ class PlayerActivity : AppCompatActivity() {
     private var season: Int = 0
     private var episode: Int = 0
     private var resumeSeconds: Long = 0L
-    private var autoExternal: Boolean = false
 
     private var lastSavedAt: Long = 0L
-
-    @Volatile private var capturedStreamUrl: String? = null
-    @Volatile private var capturedReferer: String? = null
-    private var didAutoHandoff = false
-    private val mainHandler = Handler(Looper.getMainLooper())
 
     @Suppress("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -68,41 +46,17 @@ class PlayerActivity : AppCompatActivity() {
         season = intent.getIntExtra(EXTRA_SEASON, 0)
         episode = intent.getIntExtra(EXTRA_EPISODE, 0)
         resumeSeconds = intent.getLongExtra(EXTRA_RESUME, 0L)
-        autoExternal = intent.getBooleanExtra(EXTRA_AUTO_EXTERNAL, false)
 
+        // Enable WebView remote debugging — connect via chrome://inspect from a laptop
+        // (requires `adb connect FIRE_TV_IP:5555` first)
         WebView.setWebContentsDebuggingEnabled(true)
 
-        val root = FrameLayout(this)
-        root.setBackgroundColor(Color.BLACK)
-        root.layoutParams = FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT,
-            FrameLayout.LayoutParams.MATCH_PARENT
-        )
-
         webView = WebView(this)
-        webView.layoutParams = FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT,
-            FrameLayout.LayoutParams.MATCH_PARENT
+        webView.layoutParams = android.view.ViewGroup.LayoutParams(
+            android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+            android.view.ViewGroup.LayoutParams.MATCH_PARENT
         )
-        root.addView(webView)
-
-        hintView = TextView(this).apply {
-            text = getString(R.string.external_hint_detecting)
-            setTextColor(Color.WHITE)
-            setBackgroundColor(0xCC000000.toInt())
-            setPadding(24, 16, 24, 16)
-            textSize = 14f
-            val lp = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT
-            )
-            lp.gravity = Gravity.BOTTOM or Gravity.START
-            lp.setMargins(32, 0, 0, 32)
-            layoutParams = lp
-        }
-        root.addView(hintView)
-
-        setContentView(root)
+        setContentView(webView)
 
         webView.settings.apply {
             javaScriptEnabled = true
@@ -115,15 +69,18 @@ class PlayerActivity : AppCompatActivity() {
             cacheMode = WebSettings.LOAD_DEFAULT
             allowContentAccess = true
             allowFileAccess = true
+            // Many embed sites detect Android WebView and refuse — pretend we're desktop Chrome
             userAgentString = DESKTOP_USER_AGENT
         }
 
+        // Embed sites set auth/session cookies on third-party iframes (their CDN domains).
+        // Without this, the m3u8/server lookup fails and you see "server unavailable".
         val cookies = CookieManager.getInstance()
         cookies.setAcceptCookie(true)
         cookies.setAcceptThirdPartyCookies(webView, true)
 
-        webView.setBackgroundColor(Color.BLACK)
-        webView.webViewClient = StreamSniffingWebViewClient()
+        webView.setBackgroundColor(android.graphics.Color.BLACK)
+        webView.webViewClient = WebViewClient()
         webView.webChromeClient = WebChromeClient()
         webView.addJavascriptInterface(JsBridge(), "VidkingNative")
 
@@ -143,13 +100,6 @@ class PlayerActivity : AppCompatActivity() {
             "utf-8",
             null
         )
-
-        // Auto-fade hint after 12s once it's been showing for a while
-        mainHandler.postDelayed({
-            if (capturedStreamUrl == null) {
-                hintView.alpha = 0.55f
-            }
-        }, 12_000)
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
@@ -231,144 +181,14 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-        // MENU on Fire TV remote (3-line button) — hand the captured stream off to VLC/MX
-        if (keyCode == KeyEvent.KEYCODE_MENU || keyCode == KeyEvent.KEYCODE_M) {
-            launchExternalPlayer()
-            return true
-        }
+        // Let WebView handle remote keys (D-pad, play/pause, etc.)
         return super.onKeyDown(keyCode, event)
-    }
-
-    private inner class StreamSniffingWebViewClient : WebViewClient() {
-        override fun shouldInterceptRequest(
-            view: WebView?,
-            request: WebResourceRequest?
-        ): WebResourceResponse? {
-            val url = request?.url?.toString().orEmpty()
-            if (url.isNotEmpty() && looksLikeVideoStream(url)) {
-                if (capturedStreamUrl == null) {
-                    capturedStreamUrl = url
-                    capturedReferer = request?.requestHeaders?.get("Referer")
-                        ?: "https://www.vidking.net/"
-                    Log.d(TAG, "captured stream url: $url (referer=$capturedReferer)")
-                    mainHandler.post {
-                        hintView.alpha = 1f
-                        hintView.text = getString(R.string.external_hint_ready)
-                        if (autoExternal && !didAutoHandoff) {
-                            didAutoHandoff = true
-                            // Slight delay to let the URL settle before handoff
-                            mainHandler.postDelayed({ launchExternalPlayer() }, 600)
-                        }
-                    }
-                }
-            }
-            return null
-        }
-    }
-
-    private fun looksLikeVideoStream(url: String): Boolean {
-        val lower = url.lowercase()
-        // HLS, DASH, common direct video file extensions, or HLS-like paths
-        return lower.contains(".m3u8")
-            || lower.contains(".mpd")
-            || lower.endsWith(".mp4")
-            || lower.endsWith(".mkv")
-            || lower.endsWith(".webm")
-            || lower.contains("/master.m3u8")
-            || lower.contains("/playlist.m3u8")
-    }
-
-    private fun launchExternalPlayer() {
-        val streamUrl = capturedStreamUrl
-        if (streamUrl.isNullOrEmpty()) {
-            Toast.makeText(this, R.string.external_no_stream_yet, Toast.LENGTH_LONG).show()
-            return
-        }
-
-        val mime = when {
-            streamUrl.contains(".m3u8", ignoreCase = true) -> "application/x-mpegURL"
-            streamUrl.contains(".mpd", ignoreCase = true) -> "application/dash+xml"
-            streamUrl.endsWith(".mp4", ignoreCase = true) -> "video/mp4"
-            streamUrl.endsWith(".mkv", ignoreCase = true) -> "video/x-matroska"
-            streamUrl.endsWith(".webm", ignoreCase = true) -> "video/webm"
-            else -> "video/*"
-        }
-
-        val referer = capturedReferer ?: "https://www.vidking.net/"
-        val title = if (mediaType == "tv" && season > 0)
-            "$titleArg S${season}E${episode}"
-        else titleArg
-
-        // Build a base intent with VIEW/data/type and a pile of extras that the popular
-        // Android video players (VLC, MX Player, Just Player, etc.) all read.
-        fun baseIntent(): Intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(Uri.parse(streamUrl), mime)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            putExtra("title", title)
-            // VLC
-            putExtra("from_start", resumeSeconds <= 0L)
-            if (resumeSeconds > 0L) putExtra("position", resumeSeconds * 1000L)
-            // MX Player
-            putExtra("decode_mode", 1)
-            putExtra("return_result", true)
-            // Headers (VLC + MX honor an array of "Header: value" pairs in this extra)
-            val headers = arrayOf(
-                "User-Agent", DESKTOP_USER_AGENT,
-                "Referer", referer
-            )
-            putExtra("http-headers", headers)
-            putExtra("headers", headers)
-            putExtra("User-Agent", DESKTOP_USER_AGENT)
-            putExtra("Referer", referer)
-        }
-
-        // Try VLC first, then MX Player, then any chooser.
-        val pm = packageManager
-        val targets = listOf(
-            VLC_PACKAGE to VLC_ACTIVITY,
-            MX_PRO_PACKAGE to MX_ACTIVITY,
-            MX_FREE_PACKAGE to MX_ACTIVITY,
-            JUST_PLAYER_PACKAGE to null
-        )
-
-        for ((pkg, cls) in targets) {
-            if (!isPackageInstalled(pm, pkg)) continue
-            val direct = baseIntent().apply {
-                setPackage(pkg)
-                if (cls != null) component = ComponentName(pkg, cls)
-            }
-            try {
-                startActivity(direct)
-                Log.d(TAG, "launched external player: $pkg")
-                return
-            } catch (e: ActivityNotFoundException) {
-                Log.w(TAG, "package present but activity not found: $pkg/$cls", e)
-            } catch (e: SecurityException) {
-                Log.w(TAG, "security exception launching $pkg", e)
-            }
-        }
-
-        // Nothing matched — show a chooser; if user has any video app it will appear.
-        try {
-            val chooser = Intent.createChooser(baseIntent(), "Open with")
-            chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            startActivity(chooser)
-        } catch (e: ActivityNotFoundException) {
-            Toast.makeText(this, R.string.external_no_player, Toast.LENGTH_LONG).show()
-        }
-    }
-
-    private fun isPackageInstalled(pm: PackageManager, pkg: String): Boolean {
-        return try {
-            pm.getPackageInfo(pkg, 0); true
-        } catch (_: PackageManager.NameNotFoundException) {
-            false
-        }
     }
 
     inner class JsBridge {
         @android.webkit.JavascriptInterface
         fun onPlayerEvent(payload: String) {
+            // payload is JSON: { event, currentTime, duration, progress, id, mediaType, season, episode, timestamp }
             try {
                 val json = org.json.JSONObject(payload)
                 val event = json.optString("event")
@@ -377,6 +197,7 @@ class PlayerActivity : AppCompatActivity() {
                 val progress = json.optDouble("progress", 0.0)
                 val epName = json.optString("episodeName", null)
 
+                // Throttle saves: every 10s for timeupdate; always save on pause/seeked/ended
                 val now = System.currentTimeMillis()
                 val shouldSave = when (event) {
                     "timeupdate" -> (now - lastSavedAt) > 10_000
@@ -412,19 +233,9 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     companion object {
-        private const val TAG = "PlayerActivity"
-
         private const val DESKTOP_USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
                 "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-
-        // Known external player packages
-        private const val VLC_PACKAGE = "org.videolan.vlc"
-        private const val VLC_ACTIVITY = "org.videolan.vlc.gui.video.VideoPlayerActivity"
-        private const val MX_PRO_PACKAGE = "com.mxtech.videoplayer.pro"
-        private const val MX_FREE_PACKAGE = "com.mxtech.videoplayer.ad"
-        private const val MX_ACTIVITY = "com.mxtech.videoplayer.ad.ActivityScreen"
-        private const val JUST_PLAYER_PACKAGE = "com.brouken.player"
 
         private const val EXTRA_TMDB_ID = "tmdb_id"
         private const val EXTRA_MEDIA_TYPE = "media_type"
@@ -434,7 +245,6 @@ class PlayerActivity : AppCompatActivity() {
         private const val EXTRA_SEASON = "season"
         private const val EXTRA_EPISODE = "episode"
         private const val EXTRA_RESUME = "resume"
-        private const val EXTRA_AUTO_EXTERNAL = "auto_external"
 
         fun intent(
             context: Context,
@@ -445,8 +255,7 @@ class PlayerActivity : AppCompatActivity() {
             backdropPath: String?,
             season: Int = 0,
             episode: Int = 0,
-            resumeSeconds: Long = 0L,
-            autoExternal: Boolean = false
+            resumeSeconds: Long = 0L
         ): Intent = Intent(context, PlayerActivity::class.java).apply {
             putExtra(EXTRA_TMDB_ID, tmdbId)
             putExtra(EXTRA_MEDIA_TYPE, mediaType)
@@ -456,7 +265,6 @@ class PlayerActivity : AppCompatActivity() {
             putExtra(EXTRA_SEASON, season)
             putExtra(EXTRA_EPISODE, episode)
             putExtra(EXTRA_RESUME, resumeSeconds)
-            putExtra(EXTRA_AUTO_EXTERNAL, autoExternal)
         }
     }
 }

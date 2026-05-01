@@ -62,9 +62,6 @@ class DetailsFragment : DetailsSupportFragment() {
             when (action.id) {
                 ACTION_PLAY -> launchPlayer(resumeSeconds = 0L, season = 1, episode = 1)
                 ACTION_RESUME -> launchPlayer(resumeSeconds = resumeSeconds, season = resumeSeason, episode = resumeEpisode)
-                ACTION_PLAY_EXTERNAL -> launchPlayer(
-                    resumeSeconds = 0L, season = 1, episode = 1, autoExternal = true
-                )
             }
         }
         presenterSelector.addClassPresenter(DetailsOverviewRow::class.java, detailsPresenter)
@@ -85,12 +82,7 @@ class DetailsFragment : DetailsSupportFragment() {
         loadDetails()
     }
 
-    private fun launchPlayer(
-        resumeSeconds: Long,
-        season: Int,
-        episode: Int,
-        autoExternal: Boolean = false
-    ) {
+    private fun launchPlayer(resumeSeconds: Long, season: Int, episode: Int) {
         val intent = PlayerActivity.intent(
             requireContext(),
             tmdbId = tmdbId,
@@ -100,8 +92,7 @@ class DetailsFragment : DetailsSupportFragment() {
             backdropPath = backdropPath,
             season = if (mediaType == "tv") season else 0,
             episode = if (mediaType == "tv") episode else 0,
-            resumeSeconds = resumeSeconds,
-            autoExternal = autoExternal
+            resumeSeconds = resumeSeconds
         )
         startActivity(intent)
     }
@@ -132,9 +123,6 @@ class DetailsFragment : DetailsSupportFragment() {
             } else {
                 detailActions.add(Action(ACTION_PLAY, getString(R.string.action_play), "S1E1"))
             }
-            detailActions.add(
-                Action(ACTION_PLAY_EXTERNAL, getString(R.string.action_play_external))
-            )
         }
     }
 
@@ -232,6 +220,5 @@ class DetailsFragment : DetailsSupportFragment() {
     companion object {
         const val ACTION_PLAY = 1L
         const val ACTION_RESUME = 2L
-        const val ACTION_PLAY_EXTERNAL = 3L
     }
 }
