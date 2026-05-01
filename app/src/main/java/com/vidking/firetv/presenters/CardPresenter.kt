@@ -8,6 +8,7 @@ import androidx.leanback.widget.ImageCardView
 import androidx.leanback.widget.Presenter
 import com.bumptech.glide.Glide
 import com.vidking.firetv.R
+import com.vidking.firetv.browse.SettingsCardItem
 import com.vidking.firetv.db.WatchProgress
 import com.vidking.firetv.tmdb.MediaItem
 import com.vidking.firetv.tmdb.Tmdb
@@ -57,6 +58,11 @@ class CardPresenter : Presenter() {
                     .placeholder(defaultBg)
                     .centerCrop()
                     .into(card.mainImageView)
+            }
+            is SettingsCardItem -> {
+                card.titleText = item.title
+                card.contentText = item.subtitle
+                card.mainImage = defaultBg
             }
         }
     }

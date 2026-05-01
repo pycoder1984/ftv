@@ -26,9 +26,16 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
 import com.bumptech.glide.Glide
 import com.vidking.firetv.R
+import com.vidking.firetv.data.AppPrefs
+import com.vidking.firetv.febbox.FebboxRepository
+import com.vidking.firetv.febbox.ResolvedStream
+import com.vidking.firetv.febbox.SubtitleTrack
 import com.vidking.firetv.tmdb.Tmdb
+import com.vidking.firetv.wyzie.WyzieRepository
+import kotlinx.coroutines.launch
 
 /**
  * Stream loader. Loads each embed provider in a hidden WebView, sniffs the
@@ -88,11 +95,39 @@ class PlayerActivity : AppCompatActivity() {
 
         buildUi()
         loadBackdrop()
-        startProvider(0)
+
+        if (AppPrefs.hasFebboxConfig(this)) {
+            tryFebboxThenFallback()
+        } else {
+            startProvider(0)
+        }
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() = finish()
         })
+    }
+
+    private fun tryFebboxThenFallback() {
+        statusLabel.text = getString(R.string.loader_febbox)
+        lifecycleScope.launch {
+            val result = FebboxRepository.resolve(
+                this@PlayerActivity, tmdbId, mediaType, season, episode
+            )
+            if (didHandoff || isFinishing) return@launch
+
+            val resolved = result.getOrNull()
+            if (resolved != null) {
+                val subs = if (resolved.subtitles.isNotEmpty()) {
+                    resolved.subtitles
+                } else {
+                    WyzieRepository.fetch(tmdbId, mediaType, season, episode)
+                }
+                handoffToExoPlayer(resolved.copy(subtitles = subs))
+            } else {
+                Log.w(TAG, "Febbox failed, falling through to scrapers")
+                if (!isFinishing) startProvider(0)
+            }
+        }
     }
 
     private fun buildUi() {
@@ -311,16 +346,55 @@ class PlayerActivity : AppCompatActivity() {
         if (didHandoff || isFinishing) return
         val url = capturedStreamUrl ?: return
         val referer = capturedReferer ?: providers[providerIdx].baseUrl + "/"
-        didHandoff = true
 
+        // For the scraper path we may also want Wyzie subs; fetch them lazily
+        // in a coroutine before launching ExoPlayer. Keeps the player consistent
+        // with the Febbox path.
+        didHandoff = true
         providerTimeout?.let { mainHandler.removeCallbacks(it) }
         statusLabel.text = getString(R.string.loader_starting, providers[providerIdx].name)
 
+        lifecycleScope.launch {
+            val subs = WyzieRepository.fetch(tmdbId, mediaType, season, episode)
+            launchExoPlayer(
+                streamUrl = url,
+                referer = referer,
+                userAgent = DESKTOP_USER_AGENT,
+                subs = subs,
+                introStartMs = -1L,
+                introEndMs = -1L
+            )
+        }
+    }
+
+    private fun handoffToExoPlayer(resolved: ResolvedStream) {
+        if (didHandoff || isFinishing) return
+        didHandoff = true
+        providerTimeout?.let { mainHandler.removeCallbacks(it) }
+        statusLabel.text = getString(R.string.loader_starting, "Febbox")
+        launchExoPlayer(
+            streamUrl = resolved.url,
+            referer = resolved.referer,
+            userAgent = resolved.userAgent,
+            subs = resolved.subtitles,
+            introStartMs = resolved.introStartMs,
+            introEndMs = resolved.introEndMs
+        )
+    }
+
+    private fun launchExoPlayer(
+        streamUrl: String,
+        referer: String,
+        userAgent: String,
+        subs: List<SubtitleTrack>,
+        introStartMs: Long,
+        introEndMs: Long
+    ) {
         val intent = ExoPlayerActivity.intent(
             this,
-            streamUrl = url,
+            streamUrl = streamUrl,
             referer = referer,
-            userAgent = DESKTOP_USER_AGENT,
+            userAgent = userAgent,
             tmdbId = tmdbId,
             mediaType = mediaType,
             title = titleArg,
@@ -328,7 +402,10 @@ class PlayerActivity : AppCompatActivity() {
             backdropPath = backdropPath,
             season = season,
             episode = episode,
-            resumeSeconds = resumeSeconds
+            resumeSeconds = resumeSeconds,
+            subtitles = subs,
+            introStartMs = introStartMs,
+            introEndMs = introEndMs
         )
         startActivity(intent)
         finish()

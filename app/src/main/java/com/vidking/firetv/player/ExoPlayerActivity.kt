@@ -3,24 +3,34 @@ package com.vidking.firetv.player
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
+import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import android.util.TypedValue
+import android.view.Gravity
+import android.view.View
 import android.view.WindowManager
+import android.widget.Button
 import android.widget.FrameLayout
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
+import com.vidking.firetv.R
 import com.vidking.firetv.db.AppDatabase
 import com.vidking.firetv.db.WatchProgress
+import com.vidking.firetv.febbox.SubtitleTrack
 import kotlinx.coroutines.launch
 
 /**
@@ -32,6 +42,7 @@ import kotlinx.coroutines.launch
 class ExoPlayerActivity : AppCompatActivity() {
 
     private lateinit var playerView: PlayerView
+    private var skipIntroButton: Button? = null
     private var player: ExoPlayer? = null
 
     private var streamUrl: String = ""
@@ -47,12 +58,22 @@ class ExoPlayerActivity : AppCompatActivity() {
     private var episode: Int = 0
     private var resumeSeconds: Long = 0L
 
+    private var subtitles: List<SubtitleTrack> = emptyList()
+    private var introStartMs: Long = -1L
+    private var introEndMs: Long = -1L
+
     private val mainHandler = Handler(Looper.getMainLooper())
     private var lastSavedAt: Long = 0L
     private val progressTicker = object : Runnable {
         override fun run() {
             saveProgress(force = false)
             mainHandler.postDelayed(this, 10_000)
+        }
+    }
+    private val introTicker = object : Runnable {
+        override fun run() {
+            updateSkipIntroVisibility()
+            mainHandler.postDelayed(this, 1_000)
         }
     }
 
@@ -71,6 +92,12 @@ class ExoPlayerActivity : AppCompatActivity() {
         season = intent.getIntExtra(EXTRA_SEASON, 0)
         episode = intent.getIntExtra(EXTRA_EPISODE, 0)
         resumeSeconds = intent.getLongExtra(EXTRA_RESUME, 0L)
+        introStartMs = intent.getLongExtra(EXTRA_INTRO_START_MS, -1L)
+        introEndMs = intent.getLongExtra(EXTRA_INTRO_END_MS, -1L)
+
+        @Suppress("DEPRECATION", "UNCHECKED_CAST")
+        subtitles = (intent.getParcelableArrayListExtra<SubtitleTrack>(EXTRA_SUBTITLES)
+            ?: arrayListOf()).toList()
 
         val root = FrameLayout(this).apply {
             setBackgroundColor(Color.BLACK)
@@ -91,6 +118,34 @@ class ExoPlayerActivity : AppCompatActivity() {
             setKeepContentOnPlayerReset(true)
         }
         root.addView(playerView)
+
+        skipIntroButton = Button(this).apply {
+            text = getString(R.string.player_skip_intro)
+            setTextColor(Color.WHITE)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            background = GradientDrawable().apply {
+                cornerRadius = dp(6f).toFloat()
+                setColor(0xCCE50914.toInt())
+            }
+            setPadding(dp(20), dp(10), dp(20), dp(10))
+            visibility = View.GONE
+            isFocusable = true
+            isFocusableInTouchMode = true
+            setOnClickListener {
+                if (introEndMs > 0) player?.seekTo(introEndMs)
+                visibility = View.GONE
+            }
+            val lp = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT
+            )
+            lp.gravity = Gravity.BOTTOM or Gravity.END
+            lp.bottomMargin = dp(40)
+            lp.rightMargin = dp(40)
+            layoutParams = lp
+        }
+        root.addView(skipIntroButton)
+
         setContentView(root)
 
         initPlayer()
@@ -138,7 +193,30 @@ class ExoPlayerActivity : AppCompatActivity() {
             }
         })
 
-        val mediaItem = MediaItem.fromUri(streamUrl)
+        val subtitleConfigs = subtitles.mapNotNull { sub ->
+            val mime = when (sub.mimeType) {
+                "text/vtt" -> MimeTypes.TEXT_VTT
+                "text/x-ssa" -> MimeTypes.TEXT_SSA
+                "application/x-subrip" -> MimeTypes.APPLICATION_SUBRIP
+                else -> sub.mimeType
+            }
+            try {
+                MediaItem.SubtitleConfiguration.Builder(Uri.parse(sub.url))
+                    .setMimeType(mime)
+                    .setLanguage(sub.language)
+                    .setLabel(sub.label)
+                    .setSelectionFlags(C.SELECTION_FLAG_DEFAULT.takeIf { sub === subtitles.firstOrNull() } ?: 0)
+                    .build()
+            } catch (t: Throwable) {
+                Log.w(TAG, "skipping malformed subtitle ${sub.url}", t)
+                null
+            }
+        }
+
+        val mediaItem = MediaItem.Builder()
+            .setUri(streamUrl)
+            .setSubtitleConfigurations(subtitleConfigs)
+            .build()
         exo.setMediaItem(mediaItem)
         exo.prepare()
         if (resumeSeconds > 0) exo.seekTo(resumeSeconds * 1000L)
@@ -148,14 +226,37 @@ class ExoPlayerActivity : AppCompatActivity() {
         player = exo
     }
 
+    private fun updateSkipIntroVisibility() {
+        val btn = skipIntroButton ?: return
+        val p = player ?: return
+        if (introStartMs < 0 || introEndMs <= introStartMs) {
+            if (btn.visibility != View.GONE) btn.visibility = View.GONE
+            return
+        }
+        val pos = p.currentPosition
+        val show = pos in introStartMs..introEndMs
+        if (show && btn.visibility != View.VISIBLE) {
+            btn.visibility = View.VISIBLE
+        } else if (!show && btn.visibility == View.VISIBLE) {
+            btn.visibility = View.GONE
+        }
+    }
+
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+    private fun dp(value: Float): Int = (value * resources.displayMetrics.density).toInt()
+
     override fun onStart() {
         super.onStart()
         mainHandler.postDelayed(progressTicker, 10_000)
+        if (introStartMs >= 0 && introEndMs > introStartMs) {
+            mainHandler.post(introTicker)
+        }
     }
 
     override fun onStop() {
         super.onStop()
         mainHandler.removeCallbacks(progressTicker)
+        mainHandler.removeCallbacks(introTicker)
         saveProgress(force = true)
     }
 
@@ -215,6 +316,9 @@ class ExoPlayerActivity : AppCompatActivity() {
         const val EXTRA_SEASON = "season"
         const val EXTRA_EPISODE = "episode"
         const val EXTRA_RESUME = "resume"
+        const val EXTRA_SUBTITLES = "subtitles"
+        const val EXTRA_INTRO_START_MS = "intro_start_ms"
+        const val EXTRA_INTRO_END_MS = "intro_end_ms"
 
         fun intent(
             context: Context,
@@ -228,7 +332,10 @@ class ExoPlayerActivity : AppCompatActivity() {
             backdropPath: String?,
             season: Int,
             episode: Int,
-            resumeSeconds: Long
+            resumeSeconds: Long,
+            subtitles: List<SubtitleTrack> = emptyList(),
+            introStartMs: Long = -1L,
+            introEndMs: Long = -1L
         ): Intent = Intent(context, ExoPlayerActivity::class.java).apply {
             putExtra(EXTRA_STREAM_URL, streamUrl)
             putExtra(EXTRA_REFERER, referer)
@@ -241,6 +348,9 @@ class ExoPlayerActivity : AppCompatActivity() {
             putExtra(EXTRA_SEASON, season)
             putExtra(EXTRA_EPISODE, episode)
             putExtra(EXTRA_RESUME, resumeSeconds)
+            putParcelableArrayListExtra(EXTRA_SUBTITLES, ArrayList(subtitles))
+            putExtra(EXTRA_INTRO_START_MS, introStartMs)
+            putExtra(EXTRA_INTRO_END_MS, introEndMs)
         }
     }
 }

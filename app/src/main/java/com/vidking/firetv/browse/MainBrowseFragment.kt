@@ -13,12 +13,14 @@ import androidx.leanback.widget.ListRowPresenter
 import androidx.leanback.widget.OnItemViewClickedListener
 import androidx.lifecycle.lifecycleScope
 import com.vidking.firetv.R
+import com.vidking.firetv.data.AppPrefs
 import com.vidking.firetv.db.AppDatabase
 import com.vidking.firetv.db.WatchProgress
 import com.vidking.firetv.details.DetailsActivity
 import com.vidking.firetv.player.PlayerActivity
 import com.vidking.firetv.presenters.CardPresenter
 import com.vidking.firetv.search.SearchActivity
+import com.vidking.firetv.settings.SettingsActivity
 import com.vidking.firetv.tmdb.MediaItem
 import com.vidking.firetv.tmdb.Tmdb
 import kotlinx.coroutines.flow.collectLatest
@@ -50,12 +52,28 @@ class MainBrowseFragment : BrowseSupportFragment() {
                     startActivity(intent)
                 }
                 is WatchProgress -> startPlayer(item)
+                is SettingsCardItem -> startActivity(Intent(requireContext(), SettingsActivity::class.java))
             }
         }
 
         rowsAdapter = ArrayObjectAdapter(ListRowPresenter())
         adapter = rowsAdapter
         loadRows()
+    }
+
+    private var settingsRowAdapter: ArrayObjectAdapter? = null
+
+    override fun onResume() {
+        super.onResume()
+        settingsRowAdapter?.let { refreshSettingsRow(it) }
+    }
+
+    private fun refreshSettingsRow(adapter: ArrayObjectAdapter) {
+        settingsRowAdapter = adapter
+        adapter.clear()
+        val configured = AppPrefs.hasFebboxConfig(requireContext())
+        val subtitle = if (configured) "Febbox active • tap to edit" else "Tap to add Febbox token"
+        adapter.add(SettingsCardItem("Vidking Settings", subtitle))
     }
 
     private fun startPlayer(p: WatchProgress) {
@@ -85,6 +103,10 @@ class MainBrowseFragment : BrowseSupportFragment() {
         rowsAdapter.add(ListRow(HeaderItem(1, getString(R.string.header_trending)), trendingAdapter))
         rowsAdapter.add(ListRow(HeaderItem(2, getString(R.string.header_popular_movies)), moviesAdapter))
         rowsAdapter.add(ListRow(HeaderItem(3, getString(R.string.header_popular_tv)), tvAdapter))
+
+        val settingsAdapter = ArrayObjectAdapter(cardPresenter)
+        rowsAdapter.add(ListRow(HeaderItem(4, getString(R.string.header_settings)), settingsAdapter))
+        refreshSettingsRow(settingsAdapter)
 
         loadInto("trending", trendingAdapter) { Tmdb.api.trending(Tmdb.API_KEY).results }
         loadInto("popular movies", moviesAdapter) { Tmdb.api.popularMovies(Tmdb.API_KEY).results }

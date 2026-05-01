@@ -3,6 +3,7 @@ package com.vidking.firetv
 import android.app.AlertDialog
 import android.os.Bundle
 import androidx.fragment.app.FragmentActivity
+import com.vidking.firetv.data.AppPrefs
 
 class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -12,9 +13,8 @@ class MainActivity : FragmentActivity() {
     }
 
     private fun showLastCrashIfAny() {
-        val prefs = getSharedPreferences(App.CRASH_PREF, MODE_PRIVATE)
-        val crash = prefs.getString(App.KEY_LAST_CRASH, null) ?: return
-        prefs.edit().remove(App.KEY_LAST_CRASH).apply()
+        val crash = AppPrefs.lastCrash(this) ?: return
+        AppPrefs.clearCrash(this)
         AlertDialog.Builder(this)
             .setTitle("Last crash (tap OK to dismiss)")
             .setMessage(crash.take(4000))

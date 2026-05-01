@@ -16,5 +16,19 @@
     <string name="loader_trying">Trying %1$s  (%2$d / %3$d)</string>
     <string name="loader_timeout">%1$s didn\'t respond — trying next…</string>
     <string name="loader_starting">Stream found from %1$s — starting player…</string>
+    <string name="loader_febbox">Resolving via Febbox…</string>
     <string name="loader_hint">D-pad LEFT / RIGHT to switch source manually  •  BACK to cancel</string>
+    <string name="settings_title">Settings</string>
+    <string name="settings_description">Configure Febbox / FEM API streaming. Leave blank to use the built-in scrapers.</string>
+    <string name="settings_febbox_base_url">Febbox bridge URL</string>
+    <string name="settings_febbox_base_url_hint">Base URL of your Showbox/Febbox bridge (e.g. https://showbox-febbox.vercel.app)</string>
+    <string name="settings_febbox_token">Febbox token</string>
+    <string name="settings_febbox_token_hint">Your Febbox ui_token (or the bridge\'s API key, depending on deployment)</string>
+    <string name="settings_clear_febbox">Clear Febbox settings</string>
+    <string name="settings_clear_febbox_desc">Reverts to the 6-provider WebView fallback.</string>
+    <string name="settings_done">Done</string>
+    <string name="settings_save">Save</string>
+    <string name="settings_cancel">Cancel</string>
+    <string name="settings_not_set">Not set</string>
+    <string name="player_skip_intro">Skip Intro</string>
 </resources>
