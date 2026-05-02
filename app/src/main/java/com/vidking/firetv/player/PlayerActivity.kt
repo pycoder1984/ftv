@@ -3,7 +3,6 @@ package com.vidking.firetv.player
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
-import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -12,52 +11,39 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowManager
+import android.webkit.ConsoleMessage
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
-import android.webkit.WebResourceRequest
-import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
-import android.widget.ImageView
-import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
-import com.bumptech.glide.Glide
 import com.vidking.firetv.R
-import com.vidking.firetv.data.AppPrefs
-import com.vidking.firetv.febbox.FebboxRepository
-import com.vidking.firetv.febbox.ResolvedStream
-import com.vidking.firetv.febbox.SubtitleTrack
-import com.vidking.firetv.tmdb.Tmdb
-import com.vidking.firetv.wyzie.WyzieRepository
+import com.vidking.firetv.db.AppDatabase
+import com.vidking.firetv.db.WatchProgress
 import kotlinx.coroutines.launch
 
 /**
- * Stream loader. Loads each embed provider in a hidden WebView, sniffs the
- * m3u8/mpd URL, and hands off to [ExoPlayerActivity] for native playback.
+ * Full-screen WebView-based embed player. The previous "sniff m3u8 and hand
+ * off to ExoPlayer" approach kept failing in 2026 because every embed encrypts
+ * source URLs and injects the video element via JS in ways that bypass
+ * shouldInterceptRequest.
  *
- * Fire TV's WebView is unreliable for HLS playback even when the embed loads;
- * this lets us reuse the providers' source-resolving JS while playing the
- * actual stream natively with hardware acceleration.
- *
- * Remote shortcuts:
- *   D-pad LEFT  — try previous provider
- *   D-pad RIGHT — try next provider
- *   BACK        — cancel and return
+ * Now we just load the embed iframe at full screen and let the user interact
+ * with the provider's own player using the Fire TV remote. D-Pad LEFT / RIGHT
+ * cycles to a different provider; BACK exits.
  */
 @Suppress("SetJavaScriptEnabled")
 class PlayerActivity : AppCompatActivity() {
 
     private lateinit var rootView: FrameLayout
-    private lateinit var backdropView: ImageView
-    private lateinit var titleLabel: TextView
     private lateinit var statusLabel: TextView
-    private lateinit var hintLabel: TextView
     private var webView: WebView? = null
 
     private var tmdbId: Int = -1
@@ -71,12 +57,15 @@ class PlayerActivity : AppCompatActivity() {
 
     private var providerIdx: Int = 0
     private val providers = StreamProviders.ALL
-    @Volatile private var capturedStreamUrl: String? = null
-    @Volatile private var capturedReferer: String? = null
-    private var didHandoff: Boolean = false
 
     private val mainHandler = Handler(Looper.getMainLooper())
-    private var providerTimeout: Runnable? = null
+    private var lastSavedAt: Long = 0L
+    private val progressTicker = object : Runnable {
+        override fun run() {
+            saveProgress(force = false)
+            mainHandler.postDelayed(this, 30_000)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -94,40 +83,14 @@ class PlayerActivity : AppCompatActivity() {
         WebView.setWebContentsDebuggingEnabled(true)
 
         buildUi()
-        loadBackdrop()
-
-        if (AppPrefs.hasFebboxConfig(this)) {
-            tryFebboxThenFallback()
-        } else {
-            startProvider(0)
-        }
+        loadProvider(0)
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
-            override fun handleOnBackPressed() = finish()
-        })
-    }
-
-    private fun tryFebboxThenFallback() {
-        statusLabel.text = getString(R.string.loader_febbox)
-        lifecycleScope.launch {
-            val result = FebboxRepository.resolve(
-                this@PlayerActivity, tmdbId, mediaType, season, episode
-            )
-            if (didHandoff || isFinishing) return@launch
-
-            val resolved = result.getOrNull()
-            if (resolved != null) {
-                val subs = if (resolved.subtitles.isNotEmpty()) {
-                    resolved.subtitles
-                } else {
-                    WyzieRepository.fetch(tmdbId, mediaType, season, episode)
-                }
-                handoffToExoPlayer(resolved.copy(subtitles = subs))
-            } else {
-                Log.w(TAG, "Febbox failed, falling through to scrapers")
-                if (!isFinishing) startProvider(0)
+            override fun handleOnBackPressed() {
+                saveProgress(force = true)
+                finish()
             }
-        }
+        })
     }
 
     private fun buildUi() {
@@ -139,102 +102,36 @@ class PlayerActivity : AppCompatActivity() {
             )
         }
 
-        backdropView = ImageView(this).apply {
-            scaleType = ImageView.ScaleType.CENTER_CROP
-            alpha = 0.35f
-            layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT
-            )
-        }
-        rootView.addView(backdropView)
-
-        // Dim overlay
-        val dim = View(this).apply {
-            background = ColorDrawable(0xCC000000.toInt())
-            layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT
-            )
-        }
-        rootView.addView(dim)
-
-        val column = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(64), dp(64), dp(64), dp(64))
+        statusLabel = TextView(this).apply {
+            setTextColor(0xFFE6E6E6.toInt())
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            setBackgroundColor(0xAA000000.toInt())
+            setPadding(dp(16), dp(8), dp(16), dp(8))
             val lp = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 FrameLayout.LayoutParams.WRAP_CONTENT
             )
-            lp.gravity = Gravity.CENTER
-            layoutParams = lp
-        }
-
-        titleLabel = TextView(this).apply {
-            text = titleArg + if (mediaType == "tv" && season > 0) "  •  S${season}E${episode}" else ""
-            setTextColor(Color.WHITE)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 26f)
-            gravity = Gravity.CENTER
-        }
-        column.addView(titleLabel)
-
-        statusLabel = TextView(this).apply {
-            text = getString(R.string.loader_searching)
-            setTextColor(0xFFE6E6E6.toInt())
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
-            gravity = Gravity.CENTER
-            val lp = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
+            lp.gravity = Gravity.TOP or Gravity.START
             lp.topMargin = dp(20)
+            lp.leftMargin = dp(20)
             layoutParams = lp
         }
-        column.addView(statusLabel)
-
-        hintLabel = TextView(this).apply {
-            text = getString(R.string.loader_hint)
-            setTextColor(0xFFAAAAAA.toInt())
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-            gravity = Gravity.CENTER
-            val lp = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-            lp.topMargin = dp(28)
-            layoutParams = lp
-        }
-        column.addView(hintLabel)
-
-        rootView.addView(column)
+        rootView.addView(statusLabel)
 
         setContentView(rootView)
     }
 
-    private fun loadBackdrop() {
-        val url = Tmdb.backdropUrl(backdropPath) ?: Tmdb.posterUrl(posterPath, "w780")
-        if (url != null) {
-            Glide.with(this).load(url).into(backdropView)
-        }
-    }
-
-    private fun startProvider(index: Int) {
-        if (didHandoff || isFinishing) return
-
+    private fun loadProvider(index: Int) {
+        if (isFinishing) return
         providerIdx = ((index % providers.size) + providers.size) % providers.size
         val provider = providers[providerIdx]
-        capturedStreamUrl = null
-        capturedReferer = null
-
         val embedUrl = provider.builder(tmdbId, mediaType, season, episode, resumeSeconds)
-        Log.d(TAG, "trying provider ${provider.name} -> $embedUrl")
+        Log.d(TAG, "loading ${provider.name} -> $embedUrl")
 
         statusLabel.text = getString(
-            R.string.loader_trying,
-            provider.name,
-            providerIdx + 1,
-            providers.size
+            R.string.loader_trying, provider.name, providerIdx + 1, providers.size
         )
+        statusLabel.bringToFront()
 
         // Tear down any prior WebView
         webView?.let {
@@ -246,11 +143,14 @@ class PlayerActivity : AppCompatActivity() {
         }
 
         val wv = WebView(this).apply {
-            // 1px invisible — we just need it to execute the embed JS
-            layoutParams = FrameLayout.LayoutParams(1, 1)
-            visibility = View.INVISIBLE
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+            setBackgroundColor(Color.BLACK)
+            isFocusable = true
+            isFocusableInTouchMode = true
         }
-
         wv.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
@@ -265,150 +165,36 @@ class PlayerActivity : AppCompatActivity() {
             userAgentString = DESKTOP_USER_AGENT
         }
 
-        val cookies = CookieManager.getInstance()
-        cookies.setAcceptCookie(true)
-        cookies.setAcceptThirdPartyCookies(wv, true)
+        CookieManager.getInstance().apply {
+            setAcceptCookie(true)
+            setAcceptThirdPartyCookies(wv, true)
+        }
 
-        wv.webChromeClient = WebChromeClient()
-        wv.webViewClient = StreamSniffingWebViewClient(provider)
+        wv.webChromeClient = object : WebChromeClient() {
+            override fun onConsoleMessage(msg: ConsoleMessage?): Boolean {
+                Log.d(TAG, "[${provider.name}] ${msg?.message()}")
+                return true
+            }
+        }
+        wv.webViewClient = WebViewClient()
 
-        rootView.addView(wv)
+        rootView.addView(wv, 0)  // behind the status overlay
         webView = wv
+        wv.requestFocus()
 
-        wv.loadDataWithBaseURL(
-            provider.baseUrl,
-            buildHtml(embedUrl),
-            "text/html",
-            "utf-8",
-            null
-        )
-
-        // Per-provider timeout
-        providerTimeout?.let { mainHandler.removeCallbacks(it) }
-        providerTimeout = Runnable {
-            if (didHandoff || isFinishing) return@Runnable
-            if (capturedStreamUrl == null) {
-                Log.w(TAG, "${provider.name} timed out, advancing")
-                statusLabel.text = getString(R.string.loader_timeout, provider.name)
-                mainHandler.postDelayed({ startProvider(providerIdx + 1) }, 600)
-            }
-        }
-        mainHandler.postDelayed(providerTimeout!!, PROVIDER_TIMEOUT_MS)
+        wv.loadUrl(embedUrl)
     }
 
-    private fun buildHtml(embedUrl: String): String = """
-        <!doctype html>
-        <html>
-        <head>
-            <meta charset="utf-8" />
-            <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-            <style>html,body{margin:0;padding:0;background:#000;}</style>
-        </head>
-        <body>
-            <iframe id="frame" src="$embedUrl"
-                allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
-                allowfullscreen referrerpolicy="origin"
-                style="width:1280px;height:720px;border:0;"></iframe>
-        </body>
-        </html>
-    """.trimIndent()
-
-    private inner class StreamSniffingWebViewClient(
-        private val provider: StreamProvider
-    ) : WebViewClient() {
-        override fun shouldInterceptRequest(
-            view: WebView?,
-            request: WebResourceRequest?
-        ): WebResourceResponse? {
-            val url = request?.url?.toString().orEmpty()
-            if (url.isNotEmpty() && looksLikeVideoStream(url) && capturedStreamUrl == null) {
-                capturedStreamUrl = url
-                capturedReferer = request?.requestHeaders?.get("Referer") ?: provider.baseUrl + "/"
-                Log.d(TAG, "captured from ${provider.name}: $url")
-                mainHandler.post { handoffToExoPlayer() }
-            }
-            return null
-        }
+    override fun onStart() {
+        super.onStart()
+        if (resumeSeconds > 0) lastSavedAt = System.currentTimeMillis()
+        mainHandler.postDelayed(progressTicker, 30_000)
     }
 
-    private fun looksLikeVideoStream(url: String): Boolean {
-        val lower = url.lowercase()
-        return lower.contains(".m3u8")
-            || lower.contains(".mpd")
-            || lower.endsWith(".mp4")
-            || lower.endsWith(".mkv")
-            || lower.endsWith(".webm")
-            || lower.contains("/master.m3u8")
-            || lower.contains("/playlist.m3u8")
-    }
-
-    private fun handoffToExoPlayer() {
-        if (didHandoff || isFinishing) return
-        val url = capturedStreamUrl ?: return
-        val referer = capturedReferer ?: providers[providerIdx].baseUrl + "/"
-
-        // For the scraper path we may also want Wyzie subs; fetch them lazily
-        // in a coroutine before launching ExoPlayer. Keeps the player consistent
-        // with the Febbox path.
-        didHandoff = true
-        providerTimeout?.let { mainHandler.removeCallbacks(it) }
-        statusLabel.text = getString(R.string.loader_starting, providers[providerIdx].name)
-
-        lifecycleScope.launch {
-            val subs = WyzieRepository.fetch(tmdbId, mediaType, season, episode)
-            launchExoPlayer(
-                streamUrl = url,
-                referer = referer,
-                userAgent = DESKTOP_USER_AGENT,
-                subs = subs,
-                introStartMs = -1L,
-                introEndMs = -1L
-            )
-        }
-    }
-
-    private fun handoffToExoPlayer(resolved: ResolvedStream) {
-        if (didHandoff || isFinishing) return
-        didHandoff = true
-        providerTimeout?.let { mainHandler.removeCallbacks(it) }
-        statusLabel.text = getString(R.string.loader_starting, "Febbox")
-        launchExoPlayer(
-            streamUrl = resolved.url,
-            referer = resolved.referer,
-            userAgent = resolved.userAgent,
-            subs = resolved.subtitles,
-            introStartMs = resolved.introStartMs,
-            introEndMs = resolved.introEndMs
-        )
-    }
-
-    private fun launchExoPlayer(
-        streamUrl: String,
-        referer: String,
-        userAgent: String,
-        subs: List<SubtitleTrack>,
-        introStartMs: Long,
-        introEndMs: Long
-    ) {
-        val intent = ExoPlayerActivity.intent(
-            this,
-            streamUrl = streamUrl,
-            referer = referer,
-            userAgent = userAgent,
-            tmdbId = tmdbId,
-            mediaType = mediaType,
-            title = titleArg,
-            posterPath = posterPath,
-            backdropPath = backdropPath,
-            season = season,
-            episode = episode,
-            resumeSeconds = resumeSeconds,
-            subtitles = subs,
-            introStartMs = introStartMs,
-            introEndMs = introEndMs
-        )
-        startActivity(intent)
-        finish()
+    override fun onStop() {
+        super.onStop()
+        mainHandler.removeCallbacks(progressTicker)
+        saveProgress(force = true)
     }
 
     override fun onPause() {
@@ -422,7 +208,6 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
-        providerTimeout?.let { mainHandler.removeCallbacks(it) }
         webView?.let {
             try {
                 it.stopLoading()
@@ -435,19 +220,58 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-        when (keyCode) {
-            KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_MEDIA_NEXT -> {
-                providerTimeout?.let { mainHandler.removeCallbacks(it) }
-                startProvider(providerIdx + 1)
-                return true
-            }
-            KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_MEDIA_PREVIOUS -> {
-                providerTimeout?.let { mainHandler.removeCallbacks(it) }
-                startProvider(providerIdx - 1)
-                return true
+        // Long-press MENU (= keycode 82) cycles providers. We avoid using
+        // LEFT/RIGHT/UP/DOWN because the embed's own player may need them.
+        // Most Fire TV remotes don't have MENU, so we also accept BUTTON_R1
+        // (top-right button on game-controller-style inputs) as a fallback.
+        if (event?.action == KeyEvent.ACTION_DOWN) {
+            when (keyCode) {
+                KeyEvent.KEYCODE_MENU,
+                KeyEvent.KEYCODE_BUTTON_R1,
+                KeyEvent.KEYCODE_MEDIA_NEXT -> {
+                    loadProvider(providerIdx + 1)
+                    return true
+                }
+                KeyEvent.KEYCODE_BUTTON_L1,
+                KeyEvent.KEYCODE_MEDIA_PREVIOUS -> {
+                    loadProvider(providerIdx - 1)
+                    return true
+                }
             }
         }
         return super.onKeyDown(keyCode, event)
+    }
+
+    private fun saveProgress(force: Boolean) {
+        // We can't read playback position from the embed, so we mark progress
+        // by elapsed wall-clock time roughly. Better than nothing for the
+        // Continue Watching row to surface recently-watched titles.
+        val now = System.currentTimeMillis()
+        if (!force && (now - lastSavedAt) < 30_000) return
+        lastSavedAt = now
+
+        val record = WatchProgress(
+            key = WatchProgress.keyFor(tmdbId, mediaType, season, episode),
+            tmdbId = tmdbId,
+            mediaType = mediaType,
+            title = titleArg,
+            posterPath = posterPath,
+            backdropPath = backdropPath,
+            season = season,
+            episode = episode,
+            episodeName = null,
+            currentTime = 0.0,
+            duration = 0.0,
+            progressPct = 0.1,
+            updatedAt = now
+        )
+        lifecycleScope.launch {
+            try {
+                AppDatabase.get(this@PlayerActivity).watchProgressDao().upsert(record)
+            } catch (t: Throwable) {
+                Log.w(TAG, "progress save failed: ${t.message}")
+            }
+        }
     }
 
     private fun dp(value: Int): Int =
@@ -455,7 +279,6 @@ class PlayerActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "PlayerActivity"
-        private const val PROVIDER_TIMEOUT_MS = 18_000L
 
         private const val DESKTOP_USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +

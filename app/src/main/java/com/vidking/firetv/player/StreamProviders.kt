@@ -1,11 +1,13 @@
 package com.vidking.firetv.player
 
 /**
- * Embed providers we cycle through to find a working stream. Each one is loaded
- * inside a hidden WebView; we then sniff the m3u8 from network requests and hand
- * it off to ExoPlayer for native playback.
+ * Embed providers loaded full-screen as the actual player. The user interacts
+ * with the iframe directly via D-Pad — no scraping, no sniffing.
  *
- * Mirrors the 6 providers used by web/index.html.
+ * Live as of 2026-05-01 (probed via curl). Dead providers (vidsrc.dev,
+ * multiembed.mov, nontongo.win, rivestream.live, streamingnow.mov, 2embed.cc,
+ * autoembed.cc) removed. Vidking removed at user request after it kept
+ * returning empty source lists for non-blockbuster titles.
  */
 data class StreamProvider(
     val id: String,
@@ -18,66 +20,48 @@ object StreamProviders {
 
     val ALL: List<StreamProvider> = listOf(
         StreamProvider(
-            id = "vidking",
-            name = "Vidking",
-            baseUrl = "https://www.vidking.net"
-        ) { id, type, s, e, resume ->
-            val params = buildList {
-                add("color=e50914")
-                add("autoPlay=true")
-                if (type == "tv") {
-                    add("nextEpisode=true")
-                    add("episodeSelector=true")
-                }
-                if (resume > 0) add("progress=$resume")
-            }.joinToString("&")
-            if (type == "movie") "https://www.vidking.net/embed/movie/$id?$params"
-            else "https://www.vidking.net/embed/tv/$id/$s/$e?$params"
+            id = "vidsrc-to",
+            name = "VidSrc.to",
+            baseUrl = "https://vidsrc.to"
+        ) { id, type, s, e, _ ->
+            if (type == "movie") "https://vidsrc.to/embed/movie/$id"
+            else "https://vidsrc.to/embed/tv/$id/$s/$e"
         },
 
         StreamProvider(
-            id = "vidsrc-cc",
-            name = "VidSrc.cc",
-            baseUrl = "https://vidsrc.cc"
+            id = "moviesapi",
+            name = "MoviesAPI",
+            baseUrl = "https://moviesapi.club"
         ) { id, type, s, e, _ ->
-            if (type == "movie") "https://vidsrc.cc/v2/embed/movie/$id?autoPlay=true"
-            else "https://vidsrc.cc/v2/embed/tv/$id/$s/$e?autoPlay=true"
+            if (type == "movie") "https://moviesapi.club/movie/$id"
+            else "https://moviesapi.club/tv/$id-$s-$e"
         },
 
         StreamProvider(
-            id = "vidsrc-xyz",
-            name = "VidSrc.xyz",
-            baseUrl = "https://vidsrc.xyz"
+            id = "vidlink",
+            name = "VidLink",
+            baseUrl = "https://vidlink.pro"
         ) { id, type, s, e, _ ->
-            if (type == "movie") "https://vidsrc.xyz/embed/movie?tmdb=$id"
-            else "https://vidsrc.xyz/embed/tv?tmdb=$id&season=$s&episode=$e"
+            if (type == "movie") "https://vidlink.pro/movie/$id"
+            else "https://vidlink.pro/tv/$id/$s/$e"
         },
 
         StreamProvider(
-            id = "embedsu",
-            name = "Embed.su",
-            baseUrl = "https://embed.su"
+            id = "vidsrc-me",
+            name = "VidSrc.me",
+            baseUrl = "https://vidsrc.me"
         ) { id, type, s, e, _ ->
-            if (type == "movie") "https://embed.su/embed/movie/$id"
-            else "https://embed.su/embed/tv/$id/$s/$e"
+            if (type == "movie") "https://vidsrc.me/embed/movie?tmdb=$id"
+            else "https://vidsrc.me/embed/tv?tmdb=$id&season=$s&episode=$e"
         },
 
         StreamProvider(
-            id = "2embed",
-            name = "2Embed",
-            baseUrl = "https://www.2embed.cc"
+            id = "2embed-skin",
+            name = "2Embed.skin",
+            baseUrl = "https://2embed.skin"
         ) { id, type, s, e, _ ->
-            if (type == "movie") "https://www.2embed.cc/embed/$id"
-            else "https://www.2embed.cc/embedtv/$id&s=$s&e=$e"
-        },
-
-        StreamProvider(
-            id = "autoembed",
-            name = "AutoEmbed",
-            baseUrl = "https://player.autoembed.cc"
-        ) { id, type, s, e, _ ->
-            if (type == "movie") "https://player.autoembed.cc/embed/movie/$id"
-            else "https://player.autoembed.cc/embed/tv/$id/$s/$e"
+            if (type == "movie") "https://2embed.skin/embed/movie?tmdb=$id"
+            else "https://2embed.skin/embed/tv?tmdb=$id&season=$s&episode=$e"
         }
     )
 }
