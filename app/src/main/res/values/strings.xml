@@ -38,4 +38,9 @@
     <string name="launcher_hint">BACK to cancel  •  Long-press OK in player for diagnostics</string>
     <string name="launcher_failed">Couldn\'t resolve a stream from %1$s.</string>
     <string name="launcher_failed_hint">Try a different title, or enable a Febbox bridge in Settings.</string>
+    <string name="action_episodes">Browse Episodes ↓</string>
+    <string name="header_live_tv">Live TV</string>
+    <string name="settings_livetv_url">IPTV Playlist URL (M3U)</string>
+    <string name="settings_livetv_url_hint">Paste an M3U playlist URL from your IPTV provider. Leave blank to use the built-in free channels.</string>
+    <string name="settings_livetv_default">Using built-in free channels</string>
 </resources>

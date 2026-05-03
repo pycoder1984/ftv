@@ -22,7 +22,15 @@ class SettingsFragment : GuidedStepSupportFragment() {
         val baseUrl = AppPrefs.febboxBaseUrl(ctx)
         val token = AppPrefs.febboxToken(ctx)
         val embedFallback = AppPrefs.embedFallbackEnabled(ctx)
+        val livetvUrl = AppPrefs.livetvPlaylistUrl(ctx)
 
+        actions.add(
+            GuidedAction.Builder(ctx)
+                .id(ACTION_LIVETV_URL)
+                .title(getString(R.string.settings_livetv_url))
+                .description(if (livetvUrl.isEmpty()) getString(R.string.settings_livetv_default) else livetvUrl)
+                .build()
+        )
         actions.add(
             GuidedAction.Builder(ctx)
                 .id(ACTION_BASE_URL)
@@ -69,6 +77,11 @@ class SettingsFragment : GuidedStepSupportFragment() {
         val baseUrl = AppPrefs.febboxBaseUrl(ctx)
         val token = AppPrefs.febboxToken(ctx)
         val embedFallback = AppPrefs.embedFallbackEnabled(ctx)
+        val livetvUrl = AppPrefs.livetvPlaylistUrl(ctx)
+        findActionById(ACTION_LIVETV_URL)?.let {
+            it.description = if (livetvUrl.isEmpty()) getString(R.string.settings_livetv_default) else livetvUrl
+            notifyActionChanged(findActionPositionById(ACTION_LIVETV_URL))
+        }
         findActionById(ACTION_BASE_URL)?.let {
             it.description = if (baseUrl.isEmpty()) getString(R.string.settings_not_set) else baseUrl
             notifyActionChanged(findActionPositionById(ACTION_BASE_URL))
@@ -87,6 +100,15 @@ class SettingsFragment : GuidedStepSupportFragment() {
 
     override fun onGuidedActionClicked(action: GuidedAction) {
         when (action.id) {
+            ACTION_LIVETV_URL -> add(
+                parentFragmentManager,
+                TextEntryStepFragment.create(
+                    field = TextEntryStepFragment.FIELD_LIVETV_URL,
+                    title = getString(R.string.settings_livetv_url),
+                    description = getString(R.string.settings_livetv_url_hint),
+                    initialValue = AppPrefs.livetvPlaylistUrl(requireContext())
+                )
+            )
             ACTION_BASE_URL -> add(
                 parentFragmentManager,
                 TextEntryStepFragment.create(
@@ -127,6 +149,7 @@ class SettingsFragment : GuidedStepSupportFragment() {
     }
 
     companion object {
+        private const val ACTION_LIVETV_URL = 0L
         private const val ACTION_BASE_URL = 1L
         private const val ACTION_TOKEN = 2L
         private const val ACTION_EMBED_FALLBACK = 3L

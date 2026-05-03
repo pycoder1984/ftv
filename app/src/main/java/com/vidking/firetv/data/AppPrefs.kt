@@ -16,6 +16,7 @@ object AppPrefs {
     private const val KEY_FEBBOX_BASE_URL = "febbox_base_url"
     private const val KEY_FEBBOX_TOKEN = "febbox_token"
     private const val KEY_EMBED_FALLBACK = "embed_fallback_enabled"
+    private const val KEY_LIVETV_URL = "livetv_playlist_url"
     private const val KEY_LAST_CRASH = "last_crash"
     private const val KEY_LAST_CRASH_AT = "last_crash_at"
 
@@ -35,6 +36,13 @@ object AppPrefs {
 
     fun setFebboxToken(context: Context, value: String) {
         prefs(context).edit().putString(KEY_FEBBOX_TOKEN, value.trim()).apply()
+    }
+
+    fun livetvPlaylistUrl(context: Context): String =
+        prefs(context).getString(KEY_LIVETV_URL, "").orEmpty().trim()
+
+    fun setLivetvPlaylistUrl(context: Context, value: String) {
+        prefs(context).edit().putString(KEY_LIVETV_URL, value.trim()).apply()
     }
 
     fun hasFebboxConfig(context: Context): Boolean =

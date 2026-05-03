@@ -10,6 +10,7 @@ import com.bumptech.glide.Glide
 import com.vidking.firetv.R
 import com.vidking.firetv.browse.SettingsCardItem
 import com.vidking.firetv.db.WatchProgress
+import com.vidking.firetv.livetv.Channel
 import com.vidking.firetv.tmdb.MediaItem
 import com.vidking.firetv.tmdb.Tmdb
 
@@ -58,6 +59,19 @@ class CardPresenter : Presenter() {
                     .placeholder(defaultBg)
                     .centerCrop()
                     .into(card.mainImageView)
+            }
+            is Channel -> {
+                card.titleText = item.name
+                card.contentText = item.group ?: "Live TV"
+                if (item.logoUrl != null) {
+                    Glide.with(card.context)
+                        .load(item.logoUrl)
+                        .placeholder(defaultBg)
+                        .centerCrop()
+                        .into(card.mainImageView)
+                } else {
+                    card.mainImage = defaultBg
+                }
             }
             is SettingsCardItem -> {
                 card.titleText = item.title

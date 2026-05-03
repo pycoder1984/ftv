@@ -31,7 +31,10 @@ import com.vidking.firetv.tmdb.MovieDetails
 import com.vidking.firetv.tmdb.Tmdb
 import com.vidking.firetv.tmdb.TvDetails
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
 
 class DetailsFragment : DetailsSupportFragment() {
@@ -62,6 +65,7 @@ class DetailsFragment : DetailsSupportFragment() {
             when (action.id) {
                 ACTION_PLAY -> launchPlayer(resumeSeconds = 0L, season = 1, episode = 1)
                 ACTION_RESUME -> launchPlayer(resumeSeconds = resumeSeconds, season = resumeSeason, episode = resumeEpisode)
+                ACTION_EPISODES -> setSelectedPosition(1)  // scroll to first season row
             }
         }
         presenterSelector.addClassPresenter(DetailsOverviewRow::class.java, detailsPresenter)
@@ -122,6 +126,7 @@ class DetailsFragment : DetailsSupportFragment() {
                 detailActions.add(Action(ACTION_PLAY, getString(R.string.action_play)))
             } else {
                 detailActions.add(Action(ACTION_PLAY, getString(R.string.action_play), "S1E1"))
+                detailActions.add(Action(ACTION_EPISODES, getString(R.string.action_episodes)))
             }
         }
     }
@@ -144,7 +149,7 @@ class DetailsFragment : DetailsSupportFragment() {
                     val d = Tmdb.api.tvDetails(tmdbId, Tmdb.API_KEY)
                     tvDetails = d
                     bindTv(d)
-                    loadFirstSeason(d)
+                    loadSeasons(d)
                 }
             }.onFailure { it.printStackTrace() }
         }
@@ -199,18 +204,36 @@ class DetailsFragment : DetailsSupportFragment() {
             })
     }
 
-    private fun loadFirstSeason(d: TvDetails) {
+    private fun loadSeasons(d: TvDetails) {
         val seasons = d.seasons.filter { it.seasonNumber > 0 }
         if (seasons.isEmpty()) return
         lifecycleScope.launch {
-            seasons.take(3).forEach { season ->
-                runCatching {
-                    val sd = Tmdb.api.tvSeason(d.id, season.seasonNumber, Tmdb.API_KEY)
-                    val adapter = ArrayObjectAdapter(EpisodePresenter())
-                    sd.episodes.forEach { adapter.add(it) }
-                    rowsAdapter.add(ListRow(HeaderItem(season.seasonNumber.toLong(),
-                        season.name ?: "Season ${season.seasonNumber}"), adapter))
-                }
+            supervisorScope {
+                // Fetch all seasons in parallel; failures for individual seasons are logged
+                // but don't prevent the rest from appearing.
+                seasons
+                    .map { season ->
+                        async {
+                            try {
+                                val sd = Tmdb.api.tvSeason(d.id, season.seasonNumber, Tmdb.API_KEY)
+                                val adapter = ArrayObjectAdapter(EpisodePresenter())
+                                sd.episodes.forEach { ep -> adapter.add(ep) }
+                                season.seasonNumber to ListRow(
+                                    HeaderItem(season.seasonNumber.toLong(),
+                                        season.name ?: "Season ${season.seasonNumber}"),
+                                    adapter
+                                )
+                            } catch (t: Throwable) {
+                                android.util.Log.e("Vidking",
+                                    "Season ${season.seasonNumber} fetch failed: ${t.message}")
+                                null
+                            }
+                        }
+                    }
+                    .awaitAll()
+                    .filterNotNull()
+                    .sortedBy { it.first }
+                    .forEach { (_, row) -> rowsAdapter.add(row) }
             }
         }
     }
@@ -220,5 +243,6 @@ class DetailsFragment : DetailsSupportFragment() {
     companion object {
         const val ACTION_PLAY = 1L
         const val ACTION_RESUME = 2L
+        const val ACTION_EPISODES = 3L
     }
 }

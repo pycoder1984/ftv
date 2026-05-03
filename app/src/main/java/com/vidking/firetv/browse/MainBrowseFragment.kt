@@ -16,6 +16,9 @@ import com.vidking.firetv.R
 import com.vidking.firetv.db.AppDatabase
 import com.vidking.firetv.db.WatchProgress
 import com.vidking.firetv.details.DetailsActivity
+import com.vidking.firetv.livetv.Channel
+import com.vidking.firetv.livetv.LiveTvRepository
+import com.vidking.firetv.player.ExoPlayerActivity
 import com.vidking.firetv.player.PlaybackLauncherActivity
 import com.vidking.firetv.presenters.CardPresenter
 import com.vidking.firetv.search.SearchActivity
@@ -51,6 +54,7 @@ class MainBrowseFragment : BrowseSupportFragment() {
                     startActivity(intent)
                 }
                 is WatchProgress -> startPlayer(item)
+                is Channel -> startLiveChannel(item)
                 is SettingsCardItem -> {
                     startActivity(Intent(requireContext(), SettingsActivity::class.java))
                 }
@@ -60,6 +64,26 @@ class MainBrowseFragment : BrowseSupportFragment() {
         rowsAdapter = ArrayObjectAdapter(ListRowPresenter())
         adapter = rowsAdapter
         loadRows()
+    }
+
+    @androidx.media3.common.util.UnstableApi
+    private fun startLiveChannel(channel: Channel) {
+        val intent = ExoPlayerActivity.intent(
+            context = requireContext(),
+            streamUrl = channel.streamUrl,
+            referer = "",
+            userAgent = ExoPlayerActivity.DESKTOP_USER_AGENT,
+            tmdbId = -1,
+            mediaType = "live",
+            title = channel.name,
+            posterPath = null,
+            backdropPath = null,
+            season = 0,
+            episode = 0,
+            resumeSeconds = 0L,
+            sourceLabel = channel.group ?: "Live"
+        )
+        startActivity(intent)
     }
 
     private fun startPlayer(p: WatchProgress) {
@@ -83,6 +107,7 @@ class MainBrowseFragment : BrowseSupportFragment() {
         val trendingAdapter = ArrayObjectAdapter(cardPresenter)
         val moviesAdapter = ArrayObjectAdapter(cardPresenter)
         val tvAdapter = ArrayObjectAdapter(cardPresenter)
+        val liveTvAdapter = ArrayObjectAdapter(cardPresenter)
         val settingsAdapter = ArrayObjectAdapter(cardPresenter)
 
         // Continue watching row (placeholder, reactive)
@@ -90,6 +115,7 @@ class MainBrowseFragment : BrowseSupportFragment() {
         rowsAdapter.add(ListRow(HeaderItem(1, getString(R.string.header_trending)), trendingAdapter))
         rowsAdapter.add(ListRow(HeaderItem(2, getString(R.string.header_popular_movies)), moviesAdapter))
         rowsAdapter.add(ListRow(HeaderItem(3, getString(R.string.header_popular_tv)), tvAdapter))
+        rowsAdapter.add(ListRow(HeaderItem(5, getString(R.string.header_live_tv)), liveTvAdapter))
 
         // Settings row — opens GuidedStep settings (Febbox, embed fallback toggle).
         settingsAdapter.add(
@@ -103,6 +129,15 @@ class MainBrowseFragment : BrowseSupportFragment() {
         loadInto("trending", trendingAdapter) { Tmdb.api.trending(Tmdb.API_KEY).results }
         loadInto("popular movies", moviesAdapter) { Tmdb.api.popularMovies(Tmdb.API_KEY).results }
         loadInto("popular tv", tvAdapter) { Tmdb.api.popularTv(Tmdb.API_KEY).results }
+
+        lifecycleScope.launch {
+            try {
+                val channels = LiveTvRepository.loadChannels(requireContext())
+                channels.forEach { liveTvAdapter.add(it) }
+            } catch (t: Throwable) {
+                Log.e("Vidking", "Failed to load live TV channels", t)
+            }
+        }
 
         // Continue Watching reactive stream
         lifecycleScope.launch {
