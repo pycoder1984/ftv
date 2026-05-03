@@ -158,8 +158,13 @@ class ExoPlayerActivity : AppCompatActivity() {
             controllerShowTimeoutMs = 4000
             setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
             setKeepContentOnPlayerReset(true)
-            // Subtitles default styling; ExoPlayer renders them onto the
-            // surface with built-in CEA / WebVTT support.
+            // Make sure D-pad / arrow keys land on the player so the built-in
+            // controller actually receives them. Without this, key events on
+            // some Fire TV firmwares (and the emulator) fall through to
+            // nothing because focus stays on the activity's root frame.
+            isFocusable = true
+            isFocusableInTouchMode = true
+            descendantFocusability = android.view.ViewGroup.FOCUS_AFTER_DESCENDANTS
         }
         rootView.addView(playerView)
 
@@ -370,10 +375,40 @@ class ExoPlayerActivity : AppCompatActivity() {
 
         playerView.player = exo
         player = exo
+        playerView.requestFocus()
 
         // MediaSession surfaces playback to Fire TV's Now Playing card and
         // hardware media keys (Play / Pause on the remote).
         mediaSession = MediaSession.Builder(this, exo).build()
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        val p = player
+        if (p != null && event.action == KeyEvent.ACTION_DOWN) {
+            // Hardware media keys + emulator's spacebar. Handled directly so
+            // they work whether or not the controller is currently visible.
+            when (event.keyCode) {
+                KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+                KeyEvent.KEYCODE_SPACE -> {
+                    if (p.isPlaying) p.pause() else p.play()
+                    playerView.showController()
+                    return true
+                }
+                KeyEvent.KEYCODE_MEDIA_PLAY -> { p.play(); playerView.showController(); return true }
+                KeyEvent.KEYCODE_MEDIA_PAUSE -> { p.pause(); playerView.showController(); return true }
+                KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
+                    p.seekTo((p.currentPosition + 10_000L).coerceAtMost(p.duration.takeIf { it > 0 } ?: Long.MAX_VALUE))
+                    playerView.showController()
+                    return true
+                }
+                KeyEvent.KEYCODE_MEDIA_REWIND -> {
+                    p.seekTo((p.currentPosition - 10_000L).coerceAtLeast(0))
+                    playerView.showController()
+                    return true
+                }
+            }
+        }
+        return super.dispatchKeyEvent(event)
     }
 
     private fun originOf(referer: String): String {

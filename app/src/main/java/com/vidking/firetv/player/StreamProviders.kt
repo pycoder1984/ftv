@@ -62,6 +62,15 @@ object StreamProviders {
         ) { id, type, s, e, _ ->
             if (type == "movie") "https://2embed.skin/embed/movie?tmdb=$id"
             else "https://2embed.skin/embed/tv?tmdb=$id&season=$s&episode=$e"
+        },
+
+        StreamProvider(
+            id = "aether",
+            name = "Aether",
+            baseUrl = "https://aether.mom"
+        ) { id, type, s, e, _ ->
+            if (type == "movie") "https://aether.mom/media/tmdb-movie-$id"
+            else "https://aether.mom/media/tmdb-tv-$id/$s/$e"
         }
     )
 }
