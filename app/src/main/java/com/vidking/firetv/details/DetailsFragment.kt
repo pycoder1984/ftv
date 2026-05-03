@@ -24,7 +24,7 @@ import com.bumptech.glide.request.transition.Transition
 import com.vidking.firetv.R
 import com.vidking.firetv.db.AppDatabase
 import com.vidking.firetv.db.WatchProgress
-import com.vidking.firetv.player.PlayerActivity
+import com.vidking.firetv.player.PlaybackLauncherActivity
 import com.vidking.firetv.presenters.CardPresenter
 import com.vidking.firetv.tmdb.Episode
 import com.vidking.firetv.tmdb.MovieDetails
@@ -83,7 +83,7 @@ class DetailsFragment : DetailsSupportFragment() {
     }
 
     private fun launchPlayer(resumeSeconds: Long, season: Int, episode: Int) {
-        val intent = PlayerActivity.intent(
+        val intent = PlaybackLauncherActivity.intent(
             requireContext(),
             tmdbId = tmdbId,
             mediaType = mediaType,

@@ -15,7 +15,7 @@ import java.util.concurrent.TimeUnit
 /**
  * Thin wrapper around FebboxApi. The base URL is user-supplied (Settings), so
  * the Retrofit instance is rebuilt whenever the URL changes. Returns
- * Result.failure on any error — PlayerActivity falls through to the WebView
+ * Result.failure on any error — StreamResolver falls through to the WebView
  * sniffer in that case, so the app still plays content when the API is down.
  */
 object FebboxRepository {

@@ -15,6 +15,7 @@ object AppPrefs {
 
     private const val KEY_FEBBOX_BASE_URL = "febbox_base_url"
     private const val KEY_FEBBOX_TOKEN = "febbox_token"
+    private const val KEY_EMBED_FALLBACK = "embed_fallback_enabled"
     private const val KEY_LAST_CRASH = "last_crash"
     private const val KEY_LAST_CRASH_AT = "last_crash_at"
 
@@ -38,6 +39,19 @@ object AppPrefs {
 
     fun hasFebboxConfig(context: Context): Boolean =
         febboxBaseUrl(context).isNotEmpty() && febboxToken(context).isNotEmpty()
+
+    /**
+     * If true (default), [PlaybackLauncherActivity] falls through to
+     * [EmbedPlayerActivity] when stream resolution fails. If false, the
+     * launcher shows an error screen instead. Disable to keep playback
+     * strictly native (recommended on Fire TV when ExoPlayer is reliable).
+     */
+    fun embedFallbackEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_EMBED_FALLBACK, true)
+
+    fun setEmbedFallbackEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_EMBED_FALLBACK, enabled).apply()
+    }
 
     fun lastCrash(context: Context): String? =
         prefs(context).getString(KEY_LAST_CRASH, null)

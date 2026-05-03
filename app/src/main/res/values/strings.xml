@@ -31,4 +31,11 @@
     <string name="settings_cancel">Cancel</string>
     <string name="settings_not_set">Not set</string>
     <string name="player_skip_intro">Skip Intro</string>
+    <string name="settings_card_subtitle">Configure Febbox bridge and player behaviour</string>
+    <string name="settings_embed_fallback">Embed fallback when scrape fails</string>
+    <string name="settings_embed_fallback_on">On — fall back to WebView iframe if no direct stream is found</string>
+    <string name="settings_embed_fallback_off">Off — show error if no direct stream is found (recommended on Fire TV)</string>
+    <string name="launcher_hint">BACK to cancel  •  Long-press OK in player for diagnostics</string>
+    <string name="launcher_failed">Couldn\'t resolve a stream from %1$s.</string>
+    <string name="launcher_failed_hint">Try a different title, or enable a Febbox bridge in Settings.</string>
 </resources>

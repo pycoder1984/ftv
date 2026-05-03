@@ -21,6 +21,7 @@ class SettingsFragment : GuidedStepSupportFragment() {
         val ctx = requireContext()
         val baseUrl = AppPrefs.febboxBaseUrl(ctx)
         val token = AppPrefs.febboxToken(ctx)
+        val embedFallback = AppPrefs.embedFallbackEnabled(ctx)
 
         actions.add(
             GuidedAction.Builder(ctx)
@@ -34,6 +35,16 @@ class SettingsFragment : GuidedStepSupportFragment() {
                 .id(ACTION_TOKEN)
                 .title(getString(R.string.settings_febbox_token))
                 .description(maskToken(token))
+                .build()
+        )
+        actions.add(
+            GuidedAction.Builder(ctx)
+                .id(ACTION_EMBED_FALLBACK)
+                .title(getString(R.string.settings_embed_fallback))
+                .description(
+                    if (embedFallback) getString(R.string.settings_embed_fallback_on)
+                    else getString(R.string.settings_embed_fallback_off)
+                )
                 .build()
         )
         actions.add(
@@ -57,6 +68,7 @@ class SettingsFragment : GuidedStepSupportFragment() {
         val ctx = requireContext()
         val baseUrl = AppPrefs.febboxBaseUrl(ctx)
         val token = AppPrefs.febboxToken(ctx)
+        val embedFallback = AppPrefs.embedFallbackEnabled(ctx)
         findActionById(ACTION_BASE_URL)?.let {
             it.description = if (baseUrl.isEmpty()) getString(R.string.settings_not_set) else baseUrl
             notifyActionChanged(findActionPositionById(ACTION_BASE_URL))
@@ -64,6 +76,12 @@ class SettingsFragment : GuidedStepSupportFragment() {
         findActionById(ACTION_TOKEN)?.let {
             it.description = maskToken(token)
             notifyActionChanged(findActionPositionById(ACTION_TOKEN))
+        }
+        findActionById(ACTION_EMBED_FALLBACK)?.let {
+            it.description =
+                if (embedFallback) getString(R.string.settings_embed_fallback_on)
+                else getString(R.string.settings_embed_fallback_off)
+            notifyActionChanged(findActionPositionById(ACTION_EMBED_FALLBACK))
         }
     }
 
@@ -87,6 +105,11 @@ class SettingsFragment : GuidedStepSupportFragment() {
                     initialValue = AppPrefs.febboxToken(requireContext())
                 )
             )
+            ACTION_EMBED_FALLBACK -> {
+                val ctx = requireContext()
+                AppPrefs.setEmbedFallbackEnabled(ctx, !AppPrefs.embedFallbackEnabled(ctx))
+                onResume()
+            }
             ACTION_CLEAR -> {
                 val ctx = requireContext()
                 AppPrefs.setFebboxBaseUrl(ctx, "")
@@ -106,7 +129,8 @@ class SettingsFragment : GuidedStepSupportFragment() {
     companion object {
         private const val ACTION_BASE_URL = 1L
         private const val ACTION_TOKEN = 2L
-        private const val ACTION_CLEAR = 3L
-        private const val ACTION_DONE = 4L
+        private const val ACTION_EMBED_FALLBACK = 3L
+        private const val ACTION_CLEAR = 4L
+        private const val ACTION_DONE = 5L
     }
 }

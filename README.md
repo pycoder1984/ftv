@@ -4,11 +4,26 @@ A native Android TV app for Fire TV Stick that browses TMDB and plays content vi
 
 ## Features
 
-- Leanback browse UI: Trending, Popular Movies, Popular TV, Continue Watching
+- Leanback browse UI: Trending, Popular Movies, Popular TV, Continue Watching, Settings
 - TMDB search
 - Details screen with episode picker for TV shows
-- Full-screen WebView player loading the Vidking iframe
+- **Native Media3 ExoPlayer playback** — HLS / DASH / MP4 with hardware decoders
+- **MediaSession** integration so Fire TV's Now Playing card and remote keys work
+- **Two-stage stream resolver**: Febbox bridge (if configured) → WebView m3u8 sniffer
+- **Embed fallback**: when no direct stream can be resolved, falls back to the legacy WebView iframe player (toggle in Settings)
+- Subtitle support (Wyzie + Febbox), with track selection
 - Local watch progress (resume where you left off) via Room
+- Long-press OK on the player remote toggles a diagnostic overlay (codec, bitrate, last error)
+
+## Why native ExoPlayer (not WebView)
+
+Per Amazon's [Fire TV web app FAQ](https://developer.amazon.com/docs/fire-tv/web-app-faq.html), Fire TV's WebView lacks reliable hardware decoder access for HLS/HEVC/multichannel audio. Loading an embed iframe full-screen *appears* to work on a phone but stutters, drops frames, or fails entirely on a Fire TV Stick. We therefore route every "play" action through:
+
+1. `PlaybackLauncherActivity` — shows a "Resolving…" UI while…
+2. `StreamResolver` — tries a Febbox HTTP bridge first, then sniffs m3u8/mp4 from a hidden WebView visiting each embed provider in turn.
+3. `ExoPlayerActivity` — plays the resolved URL via Media3 ExoPlayer through a SurfaceView, so Fire TV uses its hardware decoders.
+
+WebView is still used (a) inside the sniffer to extract the URL, and (b) as a last-resort fallback when no direct stream can be obtained. This fallback can be disabled in Settings ("Embed fallback when scrape fails").
 
 ## How to install on your Fire TV (no Android Studio needed)
 

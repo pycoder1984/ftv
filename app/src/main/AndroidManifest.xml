@@ -52,7 +52,7 @@
             android:screenOrientation="landscape" />
 
         <activity
-            android:name=".player.PlayerActivity"
+            android:name=".player.PlaybackLauncherActivity"
             android:configChanges="orientation|screenSize|keyboardHidden"
             android:exported="false"
             android:launchMode="singleTask"
@@ -61,6 +61,15 @@
 
         <activity
             android:name=".player.ExoPlayerActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:screenOrientation="landscape"
+            android:supportsPictureInPicture="true"
+            android:theme="@style/Theme.FireTVVidking.Fullscreen" />
+
+        <activity
+            android:name=".player.EmbedPlayerActivity"
             android:configChanges="orientation|screenSize|keyboardHidden"
             android:exported="false"
             android:launchMode="singleTask"

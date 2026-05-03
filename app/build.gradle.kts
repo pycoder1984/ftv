@@ -66,10 +66,16 @@ dependencies {
     implementation("com.github.bumptech.glide:glide:4.16.0")
     ksp("com.github.bumptech.glide:ksp:4.16.0")
 
-    // Media3 ExoPlayer — native HLS playback (Fire TV WebView is unreliable for HLS)
+    // Media3 ExoPlayer — native HLS / DASH playback. Fire TV's WebView can't
+    // reliably play HLS or HEVC, so we resolve direct stream URLs and render
+    // them through a hardware-accelerated SurfaceView.
     implementation("androidx.media3:media3-exoplayer:1.4.1")
     implementation("androidx.media3:media3-exoplayer-hls:1.4.1")
+    implementation("androidx.media3:media3-exoplayer-dash:1.4.1")
+    implementation("androidx.media3:media3-datasource-okhttp:1.4.1")
+    implementation("androidx.media3:media3-session:1.4.1")
     implementation("androidx.media3:media3-ui:1.4.1")
+    implementation("androidx.media3:media3-ui-leanback:1.4.1")
 
     // Room
     implementation("androidx.room:room-runtime:2.6.1")

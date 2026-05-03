@@ -30,17 +30,14 @@ import com.vidking.firetv.db.WatchProgress
 import kotlinx.coroutines.launch
 
 /**
- * Full-screen WebView-based embed player. The previous "sniff m3u8 and hand
- * off to ExoPlayer" approach kept failing in 2026 because every embed encrypts
- * source URLs and injects the video element via JS in ways that bypass
- * shouldInterceptRequest.
- *
- * Now we just load the embed iframe at full screen and let the user interact
- * with the provider's own player using the Fire TV remote. D-Pad LEFT / RIGHT
- * cycles to a different provider; BACK exits.
+ * Last-resort WebView embed player. Used only when [StreamResolver] fails to
+ * extract a direct stream URL from any provider AND the user has left embed
+ * fallback enabled in Settings. The native ExoPlayer path is preferred on
+ * Fire TV — see [PlaybackLauncherActivity] / [ExoPlayerActivity] — because
+ * Fire TV's WebView lacks reliable hardware decoder access for HLS/HEVC.
  */
 @Suppress("SetJavaScriptEnabled")
-class PlayerActivity : AppCompatActivity() {
+class EmbedPlayerActivity : AppCompatActivity() {
 
     private lateinit var rootView: FrameLayout
     private lateinit var statusLabel: TextView
@@ -267,7 +264,7 @@ class PlayerActivity : AppCompatActivity() {
         )
         lifecycleScope.launch {
             try {
-                AppDatabase.get(this@PlayerActivity).watchProgressDao().upsert(record)
+                AppDatabase.get(this@EmbedPlayerActivity).watchProgressDao().upsert(record)
             } catch (t: Throwable) {
                 Log.w(TAG, "progress save failed: ${t.message}")
             }
@@ -278,7 +275,7 @@ class PlayerActivity : AppCompatActivity() {
         (value * resources.displayMetrics.density).toInt()
 
     companion object {
-        private const val TAG = "PlayerActivity"
+        private const val TAG = "EmbedPlayerActivity"
 
         private const val DESKTOP_USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
@@ -303,7 +300,7 @@ class PlayerActivity : AppCompatActivity() {
             season: Int = 0,
             episode: Int = 0,
             resumeSeconds: Long = 0L
-        ): Intent = Intent(context, PlayerActivity::class.java).apply {
+        ): Intent = Intent(context, EmbedPlayerActivity::class.java).apply {
             putExtra(EXTRA_TMDB_ID, tmdbId)
             putExtra(EXTRA_MEDIA_TYPE, mediaType)
             putExtra(EXTRA_TITLE, title)

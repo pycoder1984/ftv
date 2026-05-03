@@ -16,9 +16,10 @@ import com.vidking.firetv.R
 import com.vidking.firetv.db.AppDatabase
 import com.vidking.firetv.db.WatchProgress
 import com.vidking.firetv.details.DetailsActivity
-import com.vidking.firetv.player.PlayerActivity
+import com.vidking.firetv.player.PlaybackLauncherActivity
 import com.vidking.firetv.presenters.CardPresenter
 import com.vidking.firetv.search.SearchActivity
+import com.vidking.firetv.settings.SettingsActivity
 import com.vidking.firetv.tmdb.MediaItem
 import com.vidking.firetv.tmdb.Tmdb
 import kotlinx.coroutines.flow.collectLatest
@@ -50,6 +51,9 @@ class MainBrowseFragment : BrowseSupportFragment() {
                     startActivity(intent)
                 }
                 is WatchProgress -> startPlayer(item)
+                is SettingsCardItem -> {
+                    startActivity(Intent(requireContext(), SettingsActivity::class.java))
+                }
             }
         }
 
@@ -59,7 +63,7 @@ class MainBrowseFragment : BrowseSupportFragment() {
     }
 
     private fun startPlayer(p: WatchProgress) {
-        val intent = PlayerActivity.intent(
+        val intent = PlaybackLauncherActivity.intent(
             requireContext(),
             tmdbId = p.tmdbId,
             mediaType = p.mediaType,
@@ -79,12 +83,22 @@ class MainBrowseFragment : BrowseSupportFragment() {
         val trendingAdapter = ArrayObjectAdapter(cardPresenter)
         val moviesAdapter = ArrayObjectAdapter(cardPresenter)
         val tvAdapter = ArrayObjectAdapter(cardPresenter)
+        val settingsAdapter = ArrayObjectAdapter(cardPresenter)
 
         // Continue watching row (placeholder, reactive)
         continueRow = ListRow(HeaderItem(0, getString(R.string.header_continue)), continueAdapter)
         rowsAdapter.add(ListRow(HeaderItem(1, getString(R.string.header_trending)), trendingAdapter))
         rowsAdapter.add(ListRow(HeaderItem(2, getString(R.string.header_popular_movies)), moviesAdapter))
         rowsAdapter.add(ListRow(HeaderItem(3, getString(R.string.header_popular_tv)), tvAdapter))
+
+        // Settings row — opens GuidedStep settings (Febbox, embed fallback toggle).
+        settingsAdapter.add(
+            SettingsCardItem(
+                title = getString(R.string.settings_title),
+                subtitle = getString(R.string.settings_card_subtitle)
+            )
+        )
+        rowsAdapter.add(ListRow(HeaderItem(4, getString(R.string.header_settings)), settingsAdapter))
 
         loadInto("trending", trendingAdapter) { Tmdb.api.trending(Tmdb.API_KEY).results }
         loadInto("popular movies", moviesAdapter) { Tmdb.api.popularMovies(Tmdb.API_KEY).results }
