@@ -7,20 +7,26 @@ import com.vidking.firetv.data.AppPrefs
 import com.vidking.firetv.febbox.FebboxRepository
 import com.vidking.firetv.febbox.ResolvedStream
 import com.vidking.firetv.febbox.SubtitleTrack
+import com.vidking.firetv.scraper.ScraperRegistry
 import com.vidking.firetv.wyzie.WyzieRepository
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
- * Two-stage stream resolver. Returns a fully-formed [ResolvedStream] that
+ * Three-stage stream resolver. Returns a fully-formed [ResolvedStream] that
  * [ExoPlayerActivity] can play immediately.
  *
  * Stage 1: Febbox bridge (if configured in Settings). One HTTP call,
  *          returns direct CDN URLs + subtitle list + intro markers.
  *
- * Stage 2: WebView sniffer per embed provider in [StreamProviders.ALL]. We
- *          load each embed off-screen and intercept the first .m3u8 / .mpd /
- *          .mp4 request that flies past. Subtitles for sniffed streams are
- *          fetched from Wyzie as a best-effort overlay.
+ * Stage 2: In-app HTTP scrapers via [ScraperRegistry]. Pure HTTP, no
+ *          WebView, no JS. Runs all enabled scrapers in parallel and
+ *          returns the first that produces a stream.
+ *
+ * Stage 3: WebView sniffer per embed provider in [StreamProviders.ALL]
+ *          (only if the user has not disabled the sniffer fallback). We
+ *          load each embed off-screen and intercept the first
+ *          .m3u8 / .mpd / .mp4 request that flies past. Subtitles for
+ *          sniffed streams are fetched from Wyzie as a best-effort overlay.
  *
  * The launcher activity provides a [ViewGroup] for hosting the hidden
  * WebView so we don't construct a stray WindowManager-attached view.
@@ -64,7 +70,28 @@ object StreamResolver {
             )
         }
 
-        // Stage 2: WebView sniff each provider in turn.
+        // Stage 2: in-app HTTP scrapers (parallel race).
+        onProgress("Trying in-app scrapers…")
+        val scraperWin = ScraperRegistry.resolveFirst(
+            context, tmdbId, mediaType, season, episode
+        )
+        if (scraperWin != null) {
+            val (scraper, stream) = scraperWin
+            attempted += scraper.displayName
+            Log.d(TAG, "${scraper.id} resolved")
+            onProgress("Got stream from ${scraper.displayName} — preparing player…")
+            return Outcome.Success(stream, scraper.displayName)
+        }
+        // Record what we attempted (for the failure screen) even when no scraper won.
+        attempted += ScraperRegistry.ALL.map { it.displayName }
+        lastError = "in-app scrapers found nothing"
+
+        // Stage 3: WebView sniff each provider — gated by user setting.
+        if (!AppPrefs.snifferFallbackEnabled(context)) {
+            Log.d(TAG, "sniffer fallback disabled; bailing")
+            return Outcome.Failure(attempted, lastError)
+        }
+
         val sniffer = StreamSniffer(context)
         for ((index, provider) in StreamProviders.ALL.withIndex()) {
             val embedUrl = provider.builder(tmdbId, mediaType, season, episode, 0L)
