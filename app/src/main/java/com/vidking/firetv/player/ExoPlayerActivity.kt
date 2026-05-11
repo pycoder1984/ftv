@@ -35,6 +35,9 @@ import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 import androidx.media3.session.MediaSession
 import androidx.media3.ui.PlayerView
 import com.vidking.firetv.febbox.SubtitleTrack
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import androidx.lifecycle.lifecycleScope
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
 
@@ -54,7 +57,6 @@ class ExoPlayerActivity : AppCompatActivity() {
     private lateinit var playerView: PlayerView
     private var errorOverlay: TextView? = null
     private var debugOverlay: TextView? = null
-    private var sourceBadge: TextView? = null
     private var player: ExoPlayer? = null
     private var mediaSession: MediaSession? = null
 
@@ -73,6 +75,19 @@ class ExoPlayerActivity : AppCompatActivity() {
 
     private var subtitles: List<SubtitleTrack> = emptyList()
     private var subtitlesEnabled: Boolean = true
+
+    // Custom subtitle renderer for OpenSubtitles sidecars. We bypass
+    // ExoPlayer's subtitle pipeline for these so the user can apply a
+    // time offset (D-Pad Up / Down) without re-preparing the player on
+    // every keypress, which would re-buffer HLS for several seconds.
+    private var syncedSubsView: TextView? = null
+    private var subtitleOffsetHint: TextView? = null
+    private val syncedSubsRenderer: SyncedSubtitleRenderer by lazy {
+        SyncedSubtitleRenderer(syncedSubsView!!)
+    }
+    private val offsetHintHider = Runnable {
+        subtitleOffsetHint?.visibility = View.GONE
+    }
 
     private var lastErrorMessage: String? = null
     private var debugVisible: Boolean = false
@@ -139,27 +154,6 @@ class ExoPlayerActivity : AppCompatActivity() {
         }
         rootView.addView(playerView)
 
-        sourceBadge = TextView(this).apply {
-            text = if (sourceLabel.isNotEmpty()) "▶ $sourceLabel" else ""
-            setTextColor(0xFFE6E6E6.toInt())
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-            background = GradientDrawable().apply {
-                cornerRadius = dp(4f).toFloat()
-                setColor(0xAA000000.toInt())
-            }
-            setPadding(dp(8), dp(4), dp(8), dp(4))
-            val lp = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT
-            )
-            lp.gravity = Gravity.TOP or Gravity.START
-            lp.topMargin = dp(20)
-            lp.leftMargin = dp(20)
-            layoutParams = lp
-            visibility = if (sourceLabel.isNotEmpty()) View.VISIBLE else View.GONE
-        }
-        rootView.addView(sourceBadge)
-
         errorOverlay = TextView(this).apply {
             setTextColor(0xFFFFFFFF.toInt())
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
@@ -198,6 +192,49 @@ class ExoPlayerActivity : AppCompatActivity() {
             layoutParams = lp
         }
         rootView.addView(debugOverlay)
+
+        // Custom subtitle view for OpenSubtitles sidecars. Anchored to the
+        // bottom of the screen with the same default styling we apply to
+        // ExoPlayer's built-in subtitleView so the two visually match.
+        syncedSubsView = TextView(this).apply {
+            setTextColor(Color.WHITE)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
+            background = GradientDrawable().apply {
+                cornerRadius = dp(4f).toFloat()
+                setColor(0x80000000.toInt())
+            }
+            setPadding(dp(10), dp(4), dp(10), dp(4))
+            gravity = Gravity.CENTER
+            visibility = View.GONE
+            val lp = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT
+            )
+            lp.gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+            lp.bottomMargin = dp(80)
+            layoutParams = lp
+        }
+        rootView.addView(syncedSubsView)
+
+        // Transient hint shown for ~2s after every Up/Down adjustment.
+        subtitleOffsetHint = TextView(this).apply {
+            setTextColor(0xFFFFFFFF.toInt())
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            background = GradientDrawable().apply {
+                cornerRadius = dp(6f).toFloat()
+                setColor(0xCC000000.toInt())
+            }
+            setPadding(dp(14), dp(8), dp(14), dp(8))
+            visibility = View.GONE
+            val lp = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT
+            )
+            lp.gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            lp.topMargin = dp(80)
+            layoutParams = lp
+        }
+        rootView.addView(subtitleOffsetHint)
 
         setContentView(rootView)
     }
@@ -279,11 +316,16 @@ class ExoPlayerActivity : AppCompatActivity() {
             }
         })
 
-        val subtitleConfigs = subtitles.mapNotNull { sub ->
+        // Split sidecars: SRT/VTT go to our custom renderer (so offset can
+        // be applied live without re-preparing the player); anything else
+        // (SSA/ASS) falls through to ExoPlayer's normal subtitle pipeline.
+        val (renderedBySelf, renderedByExo) = subtitles.partition {
+            it.mimeType == "text/vtt" || it.mimeType == "application/x-subrip"
+        }
+
+        val subtitleConfigs = renderedByExo.mapNotNull { sub ->
             val mime = when (sub.mimeType) {
-                "text/vtt" -> MimeTypes.TEXT_VTT
                 "text/x-ssa" -> MimeTypes.TEXT_SSA
-                "application/x-subrip" -> MimeTypes.APPLICATION_SUBRIP
                 else -> sub.mimeType
             }
             try {
@@ -291,11 +333,20 @@ class ExoPlayerActivity : AppCompatActivity() {
                     .setMimeType(mime)
                     .setLanguage(sub.language)
                     .setLabel(sub.label)
-                    .setSelectionFlags(C.SELECTION_FLAG_DEFAULT.takeIf { sub === subtitles.firstOrNull() } ?: 0)
+                    .setSelectionFlags(C.SELECTION_FLAG_DEFAULT.takeIf { sub === renderedByExo.firstOrNull() } ?: 0)
                     .build()
             } catch (t: Throwable) {
                 Log.w(TAG, "skipping malformed subtitle ${sub.url}", t)
                 null
+            }
+        }
+
+        // Kick off the SRT/VTT fetch in the background. The first track that
+        // parses successfully wins — most OpenSubtitles searches return a
+        // single best candidate anyway.
+        renderedBySelf.firstOrNull()?.let { sub ->
+            lifecycleScope.launch(Dispatchers.IO) {
+                syncedSubsRenderer.loadFromUrl(sub.url)
             }
         }
 
@@ -322,6 +373,7 @@ class ExoPlayerActivity : AppCompatActivity() {
 
         playerView.player = exo
         player = exo
+        syncedSubsRenderer.attach(exo)
         playerView.requestFocus()
 
         // Subtitle styling: white text on opaque black box so captions stay
@@ -356,6 +408,7 @@ class ExoPlayerActivity : AppCompatActivity() {
             .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !enabled)
             .build()
         playerView.subtitleView?.visibility = if (enabled) View.VISIBLE else View.GONE
+        syncedSubsRenderer.setEnabled(enabled)
         if (announce) {
             Toast.makeText(
                 this,
@@ -395,9 +448,40 @@ class ExoPlayerActivity : AppCompatActivity() {
                     applySubtitleEnabled(!subtitlesEnabled)
                     return true
                 }
+                // Subtitle sync: only intercept when the player controller
+                // isn't taking focus (otherwise Up/Down navigates the bar)
+                // and when our custom renderer actually has cues loaded —
+                // no point shifting the offset if subtitles aren't ours.
+                KeyEvent.KEYCODE_DPAD_UP -> {
+                    if (!playerView.isControllerFullyVisible &&
+                        syncedSubsRenderer.hasLoadedCues()
+                    ) {
+                        adjustSubtitleOffset(+500L)
+                        return true
+                    }
+                }
+                KeyEvent.KEYCODE_DPAD_DOWN -> {
+                    if (!playerView.isControllerFullyVisible &&
+                        syncedSubsRenderer.hasLoadedCues()
+                    ) {
+                        adjustSubtitleOffset(-500L)
+                        return true
+                    }
+                }
             }
         }
         return super.dispatchKeyEvent(event)
+    }
+
+    private fun adjustSubtitleOffset(deltaMs: Long) {
+        val next = syncedSubsRenderer.offsetMs() + deltaMs
+        syncedSubsRenderer.setOffsetMs(next)
+        val hint = subtitleOffsetHint ?: return
+        val sign = if (next >= 0) "+" else ""
+        hint.text = "Subtitle: $sign${"%.1f".format(next / 1000.0)} s  (▲ later  ▼ earlier)"
+        hint.visibility = View.VISIBLE
+        mainHandler.removeCallbacks(offsetHintHider)
+        mainHandler.postDelayed(offsetHintHider, 2_000L)
     }
 
     private fun describeHttpCause(error: PlaybackException): String {
@@ -520,6 +604,8 @@ class ExoPlayerActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        mainHandler.removeCallbacks(offsetHintHider)
+        syncedSubsRenderer.detach()
         mediaSession?.release()
         mediaSession = null
         player?.release()

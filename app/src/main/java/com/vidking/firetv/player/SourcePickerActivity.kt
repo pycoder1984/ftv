@@ -312,7 +312,7 @@ class SourcePickerActivity : AppCompatActivity() {
             out += Source(
                 id = "febbox",
                 name = "Febbox",
-                subtitle = getString(R.string.picker_source_febbox_desc),
+                subtitle = "",
                 kind = Source.Kind.FEBBOX
             )
         }
@@ -320,7 +320,7 @@ class SourcePickerActivity : AppCompatActivity() {
             out += Source(
                 id = p.id,
                 name = p.name,
-                subtitle = getString(R.string.picker_source_sniffer_desc),
+                subtitle = "",
                 kind = Source.Kind.SNIFFER
             )
         }
