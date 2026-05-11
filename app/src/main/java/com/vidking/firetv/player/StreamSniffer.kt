@@ -73,6 +73,14 @@ class StreamSniffer(private val context: Context) {
         val handler = Handler(Looper.getMainLooper())
         var resolved = false
         var webView: WebView? = null
+        // Diagnostics: track every request we see and the last navigation, so
+        // a timeout produces a useful logcat summary instead of just "timed
+        // out". Filter to https only — base64/data: noise is huge and rarely
+        // points to the real failure cause.
+        val seenHosts = LinkedHashSet<String>()
+        var requestCount = 0
+        var lastPageUrl = embedUrl
+        var lastHttpError: String? = null
 
         fun finish(result: Result?) {
             if (resolved) return
@@ -97,15 +105,36 @@ class StreamSniffer(private val context: Context) {
                 request: WebResourceRequest?
             ): WebResourceResponse? {
                 val urlStr = request?.url?.toString() ?: return null
+                // Track every request host for the timeout summary. Cheap
+                // bookkeeping that turns "sniff timed out" into "loaded N
+                // requests across hosts X, Y, Z but no media URL".
+                val host = request.url.host
+                if (host != null) {
+                    synchronized(seenHosts) {
+                        seenHosts.add(host)
+                        requestCount++
+                    }
+                }
                 val (kind, mime) = classify(urlStr) ?: return null
-                Log.d(TAG, "[$kind] sniffed $urlStr")
+                // Capture the *actual* Referer the WebView used — providers
+                // like MoviesAPI sign the m3u8 token against the inner player
+                // iframe origin (e.g. ww2.moviesapi.to), not the outer embed
+                // page (moviesapi.club). Forwarding the outer URL gets a 403
+                // when ExoPlayer re-requests the m3u8. The WebResourceRequest
+                // header map is case-insensitive in practice but vendors vary,
+                // so check both spellings before falling back.
+                val headers = request.requestHeaders.orEmpty()
+                val capturedReferer = headers["Referer"]
+                    ?: headers["referer"]
+                    ?: embedUrl
+                Log.d(TAG, "[$kind] sniffed $urlStr | referer=$capturedReferer")
                 // Do NOT call view.settings on this thread — shouldInterceptRequest
                 // runs on a background thread; getSettings() would crash.
                 handler.post {
                     finish(
                         Result(
                             url = urlStr,
-                            referer = embedUrl,
+                            referer = capturedReferer,
                             userAgent = DESKTOP_USER_AGENT,
                             mimeType = mime
                         )
@@ -135,7 +164,15 @@ class StreamSniffer(private val context: Context) {
                 error: android.webkit.WebResourceError?
             ) {
                 // Single-resource errors are normal on these embed pages
-                // (ad blockers, dead trackers). Don't bail.
+                // (ad blockers, dead trackers). Don't bail — but capture the
+                // first one as a hint for the timeout summary.
+                if (lastHttpError == null && request?.isForMainFrame == true) {
+                    lastHttpError = "mainframe err ${error?.errorCode}: ${error?.description} @ ${request.url}"
+                }
+            }
+
+            override fun onPageFinished(view: WebView?, url: String?) {
+                if (url != null) lastPageUrl = url
             }
         }
 
@@ -207,10 +244,14 @@ class StreamSniffer(private val context: Context) {
         }
         CookieManager.getInstance().apply {
             setAcceptCookie(true)
-            // Most embed providers don't need 3rd-party cookies for the
-            // m3u8 fetch to succeed; turning them off avoids tracker
-            // persistence and one class of redirect-driven popunder.
-            setAcceptThirdPartyCookies(wv, false)
+            // 3p cookies must be ON: providers like vidsrc.to / vidsrc.me /
+            // 2embed.skin load the actual player from a different origin
+            // (cloudnestra.com, etc.) via iframe. The cross-origin player
+            // sets auth cookies on its own domain that the subsequent m3u8
+            // request needs — those are 3rd-party from the WebView's top
+            // frame perspective. Blocking them breaks the auth chain and
+            // the sniffer times out with no media URL ever requested.
+            setAcceptThirdPartyCookies(wv, true)
         }
         // Block any DownloadManager prompt (some embed pages link the m3u8 as
         // a download to bait users into the system download UI).
@@ -232,7 +273,15 @@ class StreamSniffer(private val context: Context) {
 
         handler.postDelayed({
             if (!resolved) {
-                Log.d(TAG, "sniff timed out after ${timeoutMs}ms for $embedUrl")
+                val hosts = synchronized(seenHosts) { seenHosts.joinToString(",") }
+                Log.w(
+                    TAG,
+                    "sniff TIMEOUT after ${timeoutMs}ms\n" +
+                        "  embed=$embedUrl\n" +
+                        "  lastPage=$lastPageUrl\n" +
+                        "  requests=$requestCount across hosts: [$hosts]\n" +
+                        "  mainFrameErr=${lastHttpError ?: "(none)"}"
+                )
                 finish(null)
             }
         }, timeoutMs)

@@ -1,13 +1,22 @@
 package com.vidking.firetv.player
 
 /**
- * Embed providers loaded full-screen as the actual player. The user interacts
- * with the iframe directly via D-Pad — no scraping, no sniffing.
+ * Embed providers fed into the hidden-WebView sniffer.
  *
- * Live as of 2026-05-01 (probed via curl). Dead providers (vidsrc.dev,
- * multiembed.mov, nontongo.win, rivestream.live, streamingnow.mov, 2embed.cc,
- * autoembed.cc) removed. Vidking removed at user request after it kept
- * returning empty source lists for non-blockbuster titles.
+ * On-device verified 2026-05-11 against Fire TV (Project Hail Mary, TMDB
+ * 687163). The three providers below all reach `cloudnestra.com` / use
+ * `disable-devtool`-style antibot that detects WebView and refuses to emit
+ * the stream URL:
+ *
+ *   - vidsrc.to    (chain: vidsrc.to → vsembed.ru → cloudnestra.com)
+ *   - vidsrc.me    (chain: vidsrc.me → vidsrcme.ru → cloudnestra.com)
+ *   - 2embed.skin  (disable-devtool kills the player before iframe init)
+ *
+ * They were removed rather than left in the picker because each one burned
+ * 24 s of timeout before failing. Re-add only if a future build can defeat
+ * the antibot (navigator.webdriver / WebGL fingerprint spoof). Earlier
+ * removed dead providers: vidsrc.dev, multiembed.mov, nontongo.win,
+ * rivestream.live, streamingnow.mov, 2embed.cc, autoembed.cc, vidking.
  */
 data class StreamProvider(
     val id: String,
@@ -19,15 +28,6 @@ data class StreamProvider(
 object StreamProviders {
 
     val ALL: List<StreamProvider> = listOf(
-        StreamProvider(
-            id = "vidsrc-to",
-            name = "VidSrc.to",
-            baseUrl = "https://vidsrc.to"
-        ) { id, type, s, e, _ ->
-            if (type == "movie") "https://vidsrc.to/embed/movie/$id"
-            else "https://vidsrc.to/embed/tv/$id/$s/$e"
-        },
-
         StreamProvider(
             id = "moviesapi",
             name = "MoviesAPI",
@@ -44,24 +44,6 @@ object StreamProviders {
         ) { id, type, s, e, _ ->
             if (type == "movie") "https://vidlink.pro/movie/$id"
             else "https://vidlink.pro/tv/$id/$s/$e"
-        },
-
-        StreamProvider(
-            id = "vidsrc-me",
-            name = "VidSrc.me",
-            baseUrl = "https://vidsrc.me"
-        ) { id, type, s, e, _ ->
-            if (type == "movie") "https://vidsrc.me/embed/movie?tmdb=$id"
-            else "https://vidsrc.me/embed/tv?tmdb=$id&season=$s&episode=$e"
-        },
-
-        StreamProvider(
-            id = "2embed-skin",
-            name = "2Embed.skin",
-            baseUrl = "https://2embed.skin"
-        ) { id, type, s, e, _ ->
-            if (type == "movie") "https://2embed.skin/embed/movie?tmdb=$id"
-            else "https://2embed.skin/embed/tv?tmdb=$id&season=$s&episode=$e"
         },
 
         StreamProvider(

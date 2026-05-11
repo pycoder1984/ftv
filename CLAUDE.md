@@ -29,7 +29,7 @@ The app is **stateless across launches** — no watch history, no resume, no Roo
 The user picks one of the following per playback:
 
 1. **Febbox** (only listed if configured in Settings) — one POST to a Vercel route that wraps the Showbox→Febbox chain. Returns the full HLS quality ladder (4K / 1080p / 720p / 360p / AUTO plus a few audio-only variants). See `febbox/FebboxRepository.kt`.
-2. **WebView sniffer providers** — VidSrc.to, MoviesAPI, VidLink, VidSrc.me, 2Embed.skin, Aether. Each loads its embed page in a hidden full-screen WebView; `StreamSniffer.shouldInterceptRequest` grabs the first `.m3u8` / `.mpd` / `.mp4` request. 25 s timeout per provider. No quality picker (the master playlist's variant selection happens later inside ExoPlayer).
+2. **WebView sniffer providers** — MoviesAPI, VidLink, Aether. Each loads its embed page in a hidden full-screen WebView; `StreamSniffer.shouldInterceptRequest` grabs the first `.m3u8` / `.mpd` / `.mp4` request and captures the *actual* Referer the WebView used (signed CDN tokens like MoviesAPI's `bx.netrocdn.site/...?srv=box` are bound to the inner-iframe origin, not the outer embed page). 25 s timeout per provider. No quality picker (the master playlist's variant selection happens later inside ExoPlayer).
 
 ### Playback Pipeline
 

@@ -13,7 +13,7 @@ Latest APK is built automatically by GitHub Actions on every push to `main`:
 - Leanback browse UI: **Trending**, **Popular Movies**, **Popular TV**, **Settings**
 - TMDB search (D-Pad navigable, with the standard Leanback search orb)
 - Details screen with parallel-loaded season / episode picker for TV shows
-- **Explicit source picker.** When you hit Play you choose which provider to resolve through — Febbox first if configured, then VidSrc.to / MoviesAPI / VidLink / VidSrc.me / 2Embed.skin / Aether (all WebView-sniffer-based)
+- **Explicit source picker.** When you hit Play you choose which provider to resolve through — Febbox first if configured, then MoviesAPI / VidLink / Aether (all WebView-sniffer-based)
 - **Quality picker** for Febbox streams (4K / 1080p / 720p / 360p / AUTO)
 - **Native Media3 ExoPlayer playback** — HLS / DASH / MP4 with Fire TV's hardware decoders via SurfaceView
 - **MediaSession** integration — Now Playing card and remote media keys work
