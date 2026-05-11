@@ -1,0 +1,80 @@
+VIDKING FIRE TV — ALL SETTINGS / KEYS
+(temporary file; delete after copying)
+
+============================================
+DEVICE-SIDE SETTINGS (entered in app's Settings screen, or pushed via ADB to vidking_prefs.xml)
+============================================
+
+Febbox endpoint URL
+  https://www.rnrvibe.com/api/siteadmin/febbox
+
+Siteadmin auth token (value of the rnrvibe_siteadmin cookie)
+  rnrvibe-siteadmin-c4f7a2e9b6d3a1f80d2e9b4c6a8e1f7d-2026
+
+The default above comes from rnrvibe's lib/siteadmin.ts. Override via the
+SITEADMIN_TOKEN env var on Vercel if you rotate it.
+
+============================================
+COMPILE-TIME KEYS (baked into the APK via app/build.gradle.kts buildConfigField)
+============================================
+
+TMDB_API_KEY
+  a2fb4f4ce28576beb1dfb5de1ca071e4
+
+OPENSUBTITLES_API_KEY
+  KNJ9bsLI8YE1j24qshjY5PnuVp9Ozr18
+
+OpenSubtitles anonymous mode = 5 downloads / IP / 24 h. To raise, log in
+via POST /api/v1/login with username + password and forward the JWT as
+Authorization: Bearer <token>. Not wired up in current code.
+
+============================================
+SERVER-SIDE ENV VARS (set on Vercel, not in this repo)
+============================================
+
+FEBBOX_UI_COOKIE
+  eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpYXQiOjE3NzgzMDIwNTUsIm5iZiI6MTc3ODMwMjA1NSwiZXhwIjoxODA5NDA2MDc1LCJkYXRhIjp7InVpZCI6MTcyOTI2MywidG9rZW4iOiJhYWQwODhkNjYwMjYzMDc2N2ZlN2JhNDFlNzkwMzlkMCJ9fQ.UutvQWHBpOIILGYjJwvD-BPVZVEzzrdxJdN8uzPu-ac
+
+This is the upstream febbox.com `ui` session cookie. Lives on Vercel
+as FEBBOX_UI_COOKIE for the /api/siteadmin/febbox route to read at
+runtime. Decoded payload:
+  { iat: 1778302055, nbf: 1778302055, exp: 1809406075,
+    data: { uid: 1729263, token: aad088d660263076 7fe7ba41e79039d0 } }
+
+SITEADMIN_PASSWORD (optional override of the default password "20152017")
+SITEADMIN_TOKEN    (optional override of the default token shown above)
+
+============================================
+DEBUG KEYSTORE (committed at app/debug.keystore)
+============================================
+
+storepass : android
+keyalias  : androiddebugkey
+keypass   : android
+algorithm : RSA 2048
+validity  : 10000 days
+DN        : CN=Android Debug, O=Android, C=US
+
+Standard Android debug keystore. Used to sign every debug APK so
+reinstalls preserve SharedPreferences. Cannot sign Play Store releases.
+
+============================================
+ADB QUICK COMMANDS
+============================================
+
+# Connect Fire TV
+adb connect 172.20.10.6:5555
+
+# Install / update
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+
+# Read the current device prefs
+adb shell run-as com.vidking.firetv cat /data/data/com.vidking.firetv/shared_prefs/vidking_prefs.xml
+
+# Re-push prefs (after wipe) — save XML below to /tmp/prefs.xml first:
+adb push /tmp/prefs.xml /data/local/tmp/vidking_prefs.xml
+adb shell "run-as com.vidking.firetv sh -c 'cat /data/local/tmp/vidking_prefs.xml > /data/data/com.vidking.firetv/shared_prefs/vidking_prefs.xml'"
+
+============================================
+END
+============================================
