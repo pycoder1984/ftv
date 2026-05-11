@@ -40,7 +40,10 @@ object FebboxRepository {
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(20, TimeUnit.SECONDS)
             .addInterceptor(HttpLoggingInterceptor().apply {
-                level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BODY
+                // BASIC = URL + status + duration. Avoid BODY here — the
+                // request body includes the rnrvibe_siteadmin cookie and the
+                // response body includes signed HLS URLs.
+                level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BASIC
                 else HttpLoggingInterceptor.Level.NONE
             })
             .build()
