@@ -31,6 +31,19 @@ android {
         jvmTarget = "17"
     }
 
+    // Pin a stable debug keystore (committed to the repo) so debug APKs built
+    // here, on CI, or on a fresh machine all share the same signing cert.
+    // Without this, Android treats a re-signed reinstall as a fresh install
+    // and wipes SharedPreferences — which is what happened in 2026-05.
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
