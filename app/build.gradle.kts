@@ -16,6 +16,11 @@ android {
         versionName = "1.0"
         buildConfigField("String", "TMDB_API_KEY", "\"a2fb4f4ce28576beb1dfb5de1ca071e4\"")
         buildConfigField("String", "OPENSUBTITLES_API_KEY", "\"KNJ9bsLI8YE1j24qshjY5PnuVp9Ozr18\"")
+        // Default Febbox endpoint + siteadmin token baked into the APK so a
+        // fresh install works out of the box. User can override either in
+        // Settings → "Clear Febbox settings" reverts both back to these.
+        buildConfigField("String", "FEBBOX_DEFAULT_BASE_URL", "\"https://www.rnrvibe.com/api/siteadmin/febbox\"")
+        buildConfigField("String", "FEBBOX_DEFAULT_TOKEN", "\"rnrvibe-siteadmin-c4f7a2e9b6d3a1f80d2e9b4c6a8e1f7d-2026\"")
     }
 
     buildFeatures {
